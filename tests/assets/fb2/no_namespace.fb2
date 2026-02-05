@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook>
+  <description>
+    <title-info>
+      <book-title>No Namespace Book</book-title>
+      <author><first-name>John</first-name><last-name>Doe</last-name></author>
+      
+    </title-info>
+  </description>
+</FictionBook>

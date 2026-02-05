@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook>
+  <description>
+    <title-info>
+      <book-title>Series Book</book-title>
+      <author><first-name>Author</first-name><last-name></last-name></author>
+      <sequence name="Horus Heresy" number="3"/>
+    </title-info>
+  </description>
+</FictionBook>

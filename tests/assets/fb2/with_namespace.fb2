@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+  <description>
+    <title-info>
+      <book-title>Namespaced Book</book-title>
+      <author><first-name>Jane</first-name><last-name>Smith</last-name></author>
+      
+    </title-info>
+  </description>
+</FictionBook>
