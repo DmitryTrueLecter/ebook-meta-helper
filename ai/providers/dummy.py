@@ -1,19 +1,28 @@
-from copy import deepcopy
-from models.book import BookRecord
 from ai.base import AIProvider
+from models.book import BookRecord, OriginalWork
 
 
 class DummyAIProvider(AIProvider):
     name = "dummy"
 
     def enrich(self, record: BookRecord) -> BookRecord:
-        new = deepcopy(record)
+        # Edition (this file)
+        record.title = "Dummy Edition Title"
+        record.authors = ["Dummy Author"]
+        record.series = "Dummy Series"
+        record.series_index = 1
+        record.language = "ru"
+        record.year = 2000
 
-        new.title = "AI Title"
-        new.authors = ["AI Author"]
-        new.language = "en"
+        # Original work
+        record.original = OriginalWork(
+            title="Dummy Original Title",
+            authors=["Dummy Original Author"],
+            language="en",
+            year=1999,
+        )
 
-        new.source = "ai"
-        new.confidence = 0.9
+        record.source = "ai"
+        record.confidence = 1.0
 
-        return new
+        return record

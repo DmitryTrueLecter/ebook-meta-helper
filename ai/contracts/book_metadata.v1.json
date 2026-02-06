@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "type": "book_metadata",
+  "fields": {
+    "edition": {
+      "title": "string?",
+      "authors": "array[string]?",
+      "series": "string?",
+      "series_index": "integer?",
+      "language": "string?",
+      "year": "integer?"
+    },
+    "original": {
+      "title": "string?",
+      "authors": "array[string]?",
+      "language": "string?",
+      "year": "integer?"
+    },
+    "confidence": "number?"
+  },
+  "rules": [
+    "All fields are optional",
+    "Edition describes the concrete file",
+    "Original describes the original work",
+    "If edition language != original language, this is a translation",
+    "Unknown fields must be ignored"
+  ]
+}

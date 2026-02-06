@@ -3,6 +3,14 @@ from typing import List, Optional
 
 
 @dataclass
+class OriginalWork:
+    title: Optional[str] = None
+    language: Optional[str] = None
+    authors: List[str] = field(default_factory=list)
+    year: Optional[int] = None
+
+
+@dataclass
 class BookRecord:
     # File info
     path: str
@@ -10,7 +18,7 @@ class BookRecord:
     extension: str
     directories: List[str]
 
-    # Metadata
+    # Local / edition metadata (what THIS file represents)
     title: Optional[str] = None
     authors: List[str] = field(default_factory=list)
     series: Optional[str] = None
@@ -18,8 +26,11 @@ class BookRecord:
     language: Optional[str] = None
     year: Optional[int] = None
 
+    # Original work metadata
+    original: Optional[OriginalWork] = None
+
     # Provenance
-    source: Optional[str] = None      # "file", "ai", "mixed"
+    source: Optional[str] = None
     confidence: Optional[float] = None
 
     # Technical
