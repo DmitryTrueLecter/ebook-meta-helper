@@ -50,7 +50,7 @@ class OpenAIProvider(AIProvider):
                 {
                     "role": "system",
                     "content": (
-                        "You are a bibliographic metadata extraction engine. "
+                        "You are a bibliographic merge extraction engine. "
                         "You must return only valid JSON."
                     ),
                 },

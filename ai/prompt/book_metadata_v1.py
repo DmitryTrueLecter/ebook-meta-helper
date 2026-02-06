@@ -3,7 +3,7 @@ from models.book import BookRecord
 
 def build_book_metadata_prompt(record: BookRecord) -> str:
     """
-    Build prompt for AI to enrich book metadata.
+    Build prompt for AI to enrich book merge.
     Output MUST be valid JSON according to book_metadata.v2 contract.
     """
 
@@ -11,8 +11,8 @@ def build_book_metadata_prompt(record: BookRecord) -> str:
 
     # --- Role ---
     lines.append(
-        "You are a bibliographic metadata expert. "
-        "Your task is to enrich book metadata."
+        "You are a bibliographic merge expert. "
+        "Your task is to enrich book merge."
     )
 
     # --- Task ---
@@ -33,7 +33,7 @@ def build_book_metadata_prompt(record: BookRecord) -> str:
             + " / ".join(record.directories)
         )
 
-    # --- Existing edition metadata ---
+    # --- Existing edition merge ---
     if any(
         [
             record.title,
@@ -43,7 +43,7 @@ def build_book_metadata_prompt(record: BookRecord) -> str:
             record.year,
         ]
     ):
-        lines.append("\nExisting edition metadata:")
+        lines.append("\nExisting edition merge:")
 
         if record.title:
             lines.append(f"- Title: {record.title}")
@@ -58,9 +58,9 @@ def build_book_metadata_prompt(record: BookRecord) -> str:
         if record.year:
             lines.append(f"- Year: {record.year}")
 
-    # --- Existing original metadata ---
+    # --- Existing original merge ---
     if record.original:
-        lines.append("\nExisting original work metadata:")
+        lines.append("\nExisting original work merge:")
 
         if record.original.title:
             lines.append(f"- Original title: {record.original.title}")

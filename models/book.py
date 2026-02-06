@@ -18,7 +18,7 @@ class BookRecord:
     extension: str
     directories: List[str]
 
-    # Local / edition metadata (what THIS file represents)
+    # Local / edition merge (what THIS file represents)
     title: Optional[str] = None
     authors: List[str] = field(default_factory=list)
     series: Optional[str] = None
@@ -26,7 +26,7 @@ class BookRecord:
     language: Optional[str] = None
     year: Optional[int] = None
 
-    # Original work metadata
+    # Original work merge
     original: Optional[OriginalWork] = None
 
     # Provenance
