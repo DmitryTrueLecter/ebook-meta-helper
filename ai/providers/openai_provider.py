@@ -1,6 +1,7 @@
 from typing import Dict, Any
 
 from ai.base import AIProvider
+from ai.parse.book_metadata_v1 import parse_book_metadata_v1
 from models.book import BookRecord, OriginalWork
 
 
@@ -9,8 +10,12 @@ class OpenAIProvider(AIProvider):
 
     def enrich(self, record: BookRecord) -> BookRecord:
         try:
-            data = self._call_openai(record)
-            return self._apply_response(record, data)
+            raw = self._call_openai(record)
+            parsed, errors = parse_book_metadata_v1(raw)
+
+            record.errors.extend(errors)
+
+            return self._apply_response(record, parsed)
         except Exception as e:
             record.errors.append(f"openai: {e}")
             return record
