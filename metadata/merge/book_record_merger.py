@@ -38,22 +38,34 @@ def merge_book_records(records: List[BookRecord]) -> BookRecord:
 
 
 def _merge_into(target: BookRecord, incoming: BookRecord) -> None:
-    for field in (
+    scalar_fields = (
         "title",
+        "subtitle",
         "series",
         "series_index",
+        "series_total",
         "language",
+        "publisher",
+        "published",
         "year",
-    ):
-        if getattr(target, field) is None and getattr(incoming, field) is not None:
+        "isbn10",
+        "isbn13",
+        "asin",
+    )
+
+    for field in scalar_fields:
+        if getattr(target, field, None) is None and getattr(incoming, field, None) is not None:
             setattr(target, field, getattr(incoming, field))
 
+    # Authors
     if not target.authors and incoming.authors:
         target.authors = list(incoming.authors)
 
+    # Original work
     if target.original is None and incoming.original is not None:
         target.original = _merge_original(incoming.original)
 
+    # Technical
     target.errors.extend(incoming.errors)
     target.notes.extend(incoming.notes)
 

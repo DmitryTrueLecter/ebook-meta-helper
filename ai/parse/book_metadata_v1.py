@@ -1,13 +1,21 @@
 import json
+from datetime import datetime
 from typing import Any, Dict, Tuple, List
 
 
 _ALLOWED_EDITION_FIELDS = {
     "title": str,
+    "subtitle": str,
     "authors": list,
     "series": str,
     "series_index": int,
+    "series_total": int,
     "language": str,
+    "publisher": str,
+    "isbn10": str,
+    "isbn13": str,
+    "asin": str,
+    "published": str,  # ISO date string
     "year": int,
 }
 
@@ -49,7 +57,14 @@ def parse_book_metadata_v1(raw: Any) -> Tuple[Dict[str, Any], List[str]]:
                 if field in edition:
                     value = edition[field]
                     if _validate_type(value, field_type, field):
-                        parsed_edition[field] = value
+                        # --- special handling for date ---
+                        if field == "published" and isinstance(value, str):
+                            try:
+                                parsed_edition[field] = datetime.fromisoformat(value).date()
+                            except ValueError:
+                                errors.append(f"edition.published invalid ISO date: {value}")
+                        else:
+                            parsed_edition[field] = value
                     else:
                         errors.append(f"edition.{field} has invalid type")
             if parsed_edition:

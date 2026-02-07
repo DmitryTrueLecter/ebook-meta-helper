@@ -3,7 +3,7 @@ import json
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
-from openai import OpenAI, OpenAIError
+from openai import OpenAI
 
 from ai.base import AIProvider
 from ai.parse.book_metadata_v1 import parse_book_metadata_v1
@@ -17,14 +17,13 @@ class OpenAIProvider(AIProvider):
     def __init__(self) -> None:
         self._client: Optional[OpenAI] = None
 
-
     def enrich(self, record: BookRecord) -> BookRecord:
         result = deepcopy(record)
 
         try:
-            data = self._call_openai(record)
+            raw = self._call_openai(record)
+            parsed, errors = parse_book_metadata_v1(raw)
 
-            parsed, errors = parse_book_metadata_v1(data)
             result.errors.extend(errors)
 
             if parsed:
@@ -36,7 +35,7 @@ class OpenAIProvider(AIProvider):
         return result
 
     # =====================
-    # Separated for testing
+    # Transport
     # =====================
 
     def _call_openai(self, record: BookRecord) -> Dict[str, Any]:
@@ -49,10 +48,7 @@ class OpenAIProvider(AIProvider):
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a bibliographic merge extraction engine. "
-                        "You must return only valid JSON."
-                    ),
+                    "content": "You return only valid JSON.",
                 },
                 {
                     "role": "user",
@@ -62,8 +58,8 @@ class OpenAIProvider(AIProvider):
             response_format={"type": "json_object"},
         )
 
-        raw_text = response.choices[0].message.content
-        return json.loads(raw_text)
+        content = response.choices[0].message.content
+        return json.loads(content)
 
     def _get_client(self) -> OpenAI:
         if self._client is None:
@@ -73,18 +69,29 @@ class OpenAIProvider(AIProvider):
             self._client = OpenAI(api_key=api_key)
         return self._client
 
+    # =====================
+    # Apply parsed data
+    # =====================
+
     def _apply(self, data: Dict[str, Any], record: BookRecord) -> None:
         edition = data.get("edition", {})
-        for key in (
+
+        for field in (
             "title",
+            "subtitle",
             "authors",
             "series",
             "series_index",
+            "series_total",
             "language",
+            "publisher",
             "year",
+            "isbn10",
+            "isbn13",
+            "asin",
         ):
-            if key in edition:
-                setattr(record, key, edition[key])
+            if field in edition:
+                setattr(record, field, edition[field])
 
         original = data.get("original")
         if isinstance(original, dict):
