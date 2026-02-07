@@ -5,7 +5,7 @@ from models.book import BookRecord
 from models.pipeline import PipelineResult
 from move.mover import move_file
 from naming.renamer import build_filename
-from pipeline.debug import PipelineDebugger
+from utils.debug import Debugger
 
 from metadata.reader.registry import read_metadata
 from ai.enrich import enrich
@@ -15,7 +15,7 @@ from metadata.writer.registry import write_metadata
 
 def process_file(record: BookRecord) -> PipelineResult:
     path = Path(record.path)
-    debugger = PipelineDebugger(path)
+    debugger = Debugger(path)
     errors: list[str] = []
 
     debugger.log("init", "input BookRecord from scanner", record)

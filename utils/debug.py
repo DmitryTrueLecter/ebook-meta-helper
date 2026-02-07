@@ -8,13 +8,13 @@ from typing import Optional
 from models.book import BookRecord
 
 
-class PipelineDebugger:
+class Debugger:
     def __init__(self, source_path: Path):
-        self.enabled = os.environ.get("PIPELINE_DEBUG") == "1"
+        self.enabled = os.environ.get("DEBUG") == "1"
         if not self.enabled:
             return
 
-        base_dir = Path(os.environ.get("PIPELINE_DEBUG_DIR", "debug_logs"))
+        base_dir = Path(os.environ.get("DEBUG_DIR", "debug_logs"))
         base_dir.mkdir(parents=True, exist_ok=True)
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
