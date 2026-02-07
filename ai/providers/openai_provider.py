@@ -8,6 +8,7 @@ from openai import OpenAI
 from ai.base import AIProvider
 from ai.parse.book_metadata_v1 import parse_book_metadata_v1
 from ai.prompt.book_metadata_v1 import build_book_metadata_prompt
+from ai.contracts.schema_loader import get_edition_fields, get_original_fields
 from models.book import BookRecord, OriginalWork
 
 
@@ -74,33 +75,26 @@ class OpenAIProvider(AIProvider):
     # =====================
 
     def _apply(self, data: Dict[str, Any], record: BookRecord) -> None:
+        """Apply parsed data to BookRecord using schema field definitions"""
         edition = data.get("edition", {})
 
-        for field in (
-            "title",
-            "subtitle",
-            "authors",
-            "series",
-            "series_index",
-            "series_total",
-            "language",
-            "publisher",
-            "year",
-            "isbn10",
-            "isbn13",
-            "asin",
-        ):
-            if field in edition:
-                setattr(record, field, edition[field])
+        # Apply edition fields dynamically from schema
+        edition_fields = get_edition_fields()
+        for field_name in edition_fields.keys():
+            if field_name in edition:
+                setattr(record, field_name, edition[field_name])
 
+        # Apply original fields dynamically from schema
         original = data.get("original")
         if isinstance(original, dict):
-            record.original = OriginalWork(
-                title=original.get("title"),
-                authors=original.get("authors", []),
-                language=original.get("language"),
-                year=original.get("year"),
-            )
+            original_fields = get_original_fields()
+            original_kwargs = {}
+            for field_name in original_fields.keys():
+                if field_name in original:
+                    original_kwargs[field_name] = original[field_name]
+
+            if original_kwargs:
+                record.original = OriginalWork(**original_kwargs)
 
         if "confidence" in data:
             record.confidence = data["confidence"]

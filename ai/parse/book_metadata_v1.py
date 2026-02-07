@@ -2,32 +2,20 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Tuple, List
 
-
-_ALLOWED_EDITION_FIELDS = {
-    "title": str,
-    "subtitle": str,
-    "authors": list,
-    "series": str,
-    "series_index": int,
-    "series_total": int,
-    "language": str,
-    "publisher": str,
-    "isbn10": str,
-    "isbn13": str,
-    "asin": str,
-    "published": str,  # ISO date string
-    "year": int,
-}
-
-_ALLOWED_ORIGINAL_FIELDS = {
-    "title": str,
-    "authors": list,
-    "language": str,
-    "year": int,
-}
+from ai.contracts.schema_loader import (
+    get_edition_fields,
+    get_original_fields,
+    get_confidence_field,
+    parse_type_string,
+    validate_field_value,
+)
 
 
 def parse_book_metadata_v1(raw: Any) -> Tuple[Dict[str, Any], List[str]]:
+    """
+    Parse AI response into structured metadata.
+    Uses schema from book_metadata.v1.json for field definitions.
+    """
     errors: List[str] = []
 
     # --- Load JSON ---
@@ -46,64 +34,87 @@ def parse_book_metadata_v1(raw: Any) -> Tuple[Dict[str, Any], List[str]]:
 
     parsed: Dict[str, Any] = {}
 
-    # --- Edition ---
+    # --- Edition (dynamically from schema) ---
     edition = data.get("edition")
     if edition is not None:
         if not isinstance(edition, dict):
             errors.append("edition must be an object")
         else:
-            parsed_edition = {}
-            for field, field_type in _ALLOWED_EDITION_FIELDS.items():
-                if field in edition:
-                    value = edition[field]
-                    if _validate_type(value, field_type, field):
-                        # --- special handling for date ---
-                        if field == "published" and isinstance(value, str):
-                            try:
-                                parsed_edition[field] = datetime.fromisoformat(value).date()
-                            except ValueError:
-                                errors.append(f"edition.published invalid ISO date: {value}")
-                        else:
-                            parsed_edition[field] = value
-                    else:
-                        errors.append(f"edition.{field} has invalid type")
+            edition_fields = get_edition_fields()
+            parsed_edition = _parse_section(
+                edition,
+                edition_fields,
+                "edition",
+                errors
+            )
             if parsed_edition:
                 parsed["edition"] = parsed_edition
 
-    # --- Original ---
+    # --- Original (dynamically from schema) ---
     original = data.get("original")
     if original is not None:
         if not isinstance(original, dict):
             errors.append("original must be an object")
         else:
-            parsed_original = {}
-            for field, field_type in _ALLOWED_ORIGINAL_FIELDS.items():
-                if field in original:
-                    value = original[field]
-                    if _validate_type(value, field_type, field):
-                        parsed_original[field] = value
-                    else:
-                        errors.append(f"original.{field} has invalid type")
+            original_fields = get_original_fields()
+            parsed_original = _parse_section(
+                original,
+                original_fields,
+                "original",
+                errors
+            )
             if parsed_original:
                 parsed["original"] = parsed_original
 
     # --- Confidence ---
     confidence = data.get("confidence")
     if confidence is not None:
-        if isinstance(confidence, (int, float)):
-            if 0.0 <= float(confidence) <= 1.0:
-                parsed["confidence"] = float(confidence)
+        conf_field = get_confidence_field()
+        if validate_field_value(confidence, conf_field):
+            # Check range if specified
+            conf_range = conf_field.get("range")
+            if conf_range:
+                if conf_range[0] <= float(confidence) <= conf_range[1]:
+                    parsed["confidence"] = float(confidence)
+                else:
+                    errors.append(f"confidence out of range {conf_range}")
             else:
-                errors.append("confidence out of range 0..1")
+                parsed["confidence"] = float(confidence)
         else:
             errors.append("confidence must be a number")
 
     return parsed, errors
 
 
-def _validate_type(value: Any, expected: type, field_name: str) -> bool:
-    if expected is list:
-        if not isinstance(value, list):
-            return False
-        return all(isinstance(v, str) for v in value)
-    return isinstance(value, expected)
+def _parse_section(
+    data_section: Dict[str, Any],
+    schema_fields: Dict[str, Dict[str, Any]],
+    section_name: str,
+    errors: List[str]
+) -> Dict[str, Any]:
+    """Parse a section (edition or original) using schema definitions"""
+    parsed = {}
+
+    for field_name, field_def in schema_fields.items():
+        if field_name not in data_section:
+            continue
+
+        value = data_section[field_name]
+
+        # Validate type
+        if not validate_field_value(value, field_def):
+            errors.append(f"{section_name}.{field_name} has invalid type")
+            continue
+
+        # Special handling for date fields
+        type_str = field_def.get("type", "string")
+        if type_str == "date" and isinstance(value, str):
+            try:
+                parsed[field_name] = datetime.fromisoformat(value).date()
+            except ValueError:
+                errors.append(f"{section_name}.{field_name} invalid ISO date: {value}")
+                continue
+        else:
+            parsed[field_name] = value
+
+    return parsed
