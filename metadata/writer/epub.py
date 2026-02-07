@@ -35,21 +35,28 @@ class EPUBMetadataWriter(MetadataWriter):
                     if metadata is None:
                         return WriteResult(False, errors=["epub: no metadata"])
 
+                    # ---- Basic fields ----
                     self._set_text(metadata, "dc:title", record.title)
                     self._set_list(metadata, "dc:creator", record.authors)
                     self._set_text(metadata, "dc:language", record.language)
+                    self._set_text(metadata, "dc:publisher", record.publisher)
 
-                    if record.year:
-                        self._set_text(metadata, "dc:date", str(record.year))
+                    # ---- Dates ----
+                    if record.published:
+                        self._set_text(metadata, "dc:date", record.published)
 
+                    # ---- Identifiers ----
+                    self._set_identifier(metadata, "ISBN-10", record.isbn10)
+                    self._set_identifier(metadata, "ISBN-13", record.isbn13)
+                    self._set_meta(metadata, "asin", record.asin)
+
+                    # ---- Series ----
                     if record.series:
-                        meta = ET.SubElement(metadata, "meta")
-                        meta.set("property", "belongs-to-collection")
-                        meta.text = record.series
+                        self._set_meta(metadata, "belongs-to-collection", record.series)
                         if record.series_index is not None:
-                            idx = ET.SubElement(metadata, "meta")
-                            idx.set("property", "group-position")
-                            idx.text = str(record.series_index)
+                            self._set_meta(metadata, "group-position", str(record.series_index))
+                        if record.series_total is not None:
+                            self._set_meta(metadata, "collection-total", str(record.series_total))
 
                     tree.write(opf_full, encoding="utf-8", xml_declaration=True)
 
@@ -67,6 +74,8 @@ class EPUBMetadataWriter(MetadataWriter):
 
         except Exception as e:
             return WriteResult(False, errors=[f"epub: {e}"])
+
+    # ---------------- helpers ----------------
 
     def _find_opf(self, zin: zipfile.ZipFile) -> str | None:
         for name in zin.namelist():
@@ -90,3 +99,17 @@ class EPUBMetadataWriter(MetadataWriter):
         for v in values:
             el = ET.SubElement(meta, f"{{{OPF_NS['dc']}}}{tag.split(':')[1]}")
             el.text = v
+
+    def _set_identifier(self, meta, scheme, value):
+        if not value:
+            return
+        el = ET.SubElement(meta, f"{{{OPF_NS['dc']}}}identifier")
+        el.set("opf:scheme", scheme)
+        el.text = value
+
+    def _set_meta(self, meta, name, value):
+        if not value:
+            return
+        el = ET.SubElement(meta, "meta")
+        el.set("property", name)
+        el.text = value

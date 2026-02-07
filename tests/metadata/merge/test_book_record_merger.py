@@ -1,4 +1,4 @@
-from metadata.merge import merge_book_records
+from metadata.merge.book_record_merger import merge_book_records
 from tests.helpers.book_record_factory import make_record
 
 
