@@ -13,30 +13,20 @@ from metadata.merge.book_record_merger import merge_book_records
 from metadata.writer.registry import write_metadata
 
 
-def process_file(path: Path) -> PipelineResult:
+def process_file(record: BookRecord) -> PipelineResult:
+    path = Path(record.path)
     debugger = PipelineDebugger(path)
     errors: list[str] = []
 
-    # 1. Base record
-    try:
-        record = BookRecord(
-            path=str(path),
-            original_filename=path.name,
-            extension=path.suffix.lstrip(".").lower(),
-            directories=list(path.parent.parts),
-            source="file",
-        )
-        debugger.log("init", "initial BookRecord from filesystem", record)
-    except Exception as e:
-        return PipelineResult(False, errors=[f"record init: {e}"])
+    debugger.log("init", "input BookRecord from scanner", record)
 
     records = [record]
 
     # 2. Read embedded metadata
     try:
-        record = read_metadata(record)
-        debugger.log("read_metadata", "metadata read from file", record)
-        records.append(record)
+        record_with_meta = read_metadata(record)
+        debugger.log("read_metadata", "metadata read from file", record_with_meta)
+        records.append(record_with_meta)
     except Exception as e:
         errors.append(f"read_metadata: {e}")
         debugger.log("read_metadata_error", str(e), record)
