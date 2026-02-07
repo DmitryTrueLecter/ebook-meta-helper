@@ -2,12 +2,16 @@ import os
 import time
 from typing import List
 
-from scanner.scan_directory import scan_directory
+from dotenv import load_dotenv
+
 from models.book import BookRecord
 from pipeline.process_file import process_file
+from scanner.directory_scanner import scan_directory
 
 
 def run_watcher() -> None:
+    load_dotenv()
+
     new_books_dir = os.environ.get("NEW_BOOKS_DIR")
     if not new_books_dir:
         raise RuntimeError("NEW_BOOKS_DIR is not set")

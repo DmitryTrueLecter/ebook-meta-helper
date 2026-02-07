@@ -33,7 +33,8 @@ def process_file(record: BookRecord) -> PipelineResult:
 
     # 3. AI enrichment
     try:
-        ai_record = enrich(record)
+        ai_provider = os.getenv("AI_PROVIDER")
+        ai_record = enrich(record, ai_provider)
         debugger.log("ai_enrich", "AI metadata enrichment", ai_record)
         records.append(ai_record)
     except Exception as e:
