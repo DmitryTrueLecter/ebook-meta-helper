@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
+from datetime import date
 
 
 @dataclass
@@ -18,15 +19,29 @@ class BookRecord:
     extension: str
     directories: List[str]
 
-    # Local / edition merge (what THIS file represents)
+    # Local / edition metadata
     title: Optional[str] = None
+    subtitle: Optional[str] = None
     authors: List[str] = field(default_factory=list)
+
     series: Optional[str] = None
     series_index: Optional[int] = None
-    language: Optional[str] = None
-    year: Optional[int] = None
+    series_total: Optional[int] = None
 
-    # Original work merge
+    language: Optional[str] = None
+
+    publisher: Optional[str] = None
+
+    # Identifiers
+    isbn10: Optional[str] = None
+    isbn13: Optional[str] = None
+    asin: Optional[str] = None
+
+    # Dates
+    published: Optional[date] = None
+    year: Optional[int] = None  # legacy / fallback
+
+    # Original work metadata
     original: Optional[OriginalWork] = None
 
     # Provenance
