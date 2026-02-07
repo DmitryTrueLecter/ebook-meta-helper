@@ -18,7 +18,7 @@ def test_epub_reader_basic(monkeypatch):
         ("DC", "language"): [("en", {})]
     }.get((namespace, tag), [])
 
-    with patch("merge.reader.epub.epub.read_epub", return_value=fake_book):
+    with patch("metadata.reader.epub.epub.read_epub", return_value=fake_book):
         record = read_metadata(record)
 
     assert record.title == "EPUB Book"

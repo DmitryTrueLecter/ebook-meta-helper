@@ -1,7 +1,8 @@
 from typing import List
+
+from metadata.reader.base import MetadataReader
+from metadata.reader.fb2 import FB2MetadataReader
 from models.book import BookRecord
-from metadata.base import MetadataReader
-from metadata.fb2_reader import FB2MetadataReader
 
 
 _READERS: List[MetadataReader] = [
