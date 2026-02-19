@@ -53,6 +53,51 @@ class FB2MetadataWriter(MetadataWriter):
                     if len(parts) > 1:
                         ET.SubElement(author, q("last-name")).text = parts[1]
 
+            # ---- Annotation (description + OriginalWork) ----
+            has_description = bool(record.description)
+            has_original = (
+                record.original is not None
+                and (
+                    (record.original.title and record.original.title != record.title)
+                    or (record.original.authors and record.original.authors != record.authors)
+                )
+            )
+
+            if has_description or has_original:
+                annotation = title_info.find(q("annotation"))
+                if annotation is None:
+                    annotation = ET.SubElement(title_info, q("annotation"))
+                else:
+                    # Clear existing content
+                    for child in list(annotation):
+                        annotation.remove(child)
+                    annotation.text = None
+
+                if has_description:
+                    p = ET.SubElement(annotation, q("p"))
+                    p.text = record.description
+
+                if has_original:
+                    orig = record.original
+                    if orig.title and orig.title != record.title:
+                        p = ET.SubElement(annotation, q("p"))
+                        p.text = f"Оригинальное название: {orig.title}"
+
+                    if orig.language:
+                        p = ET.SubElement(annotation, q("p"))
+                        p.text = f"Язык оригинала: {orig.language}"
+
+                    if orig.authors and orig.authors != record.authors:
+                        p = ET.SubElement(annotation, q("p"))
+                        p.text = f"Автор: {', '.join(orig.authors)}"
+
+            # ---- Keywords (tags) ----
+            if record.tags:
+                el = title_info.find(q("keywords"))
+                if el is None:
+                    el = ET.SubElement(title_info, q("keywords"))
+                el.text = ", ".join(record.tags)
+
             # ---- Series ----
             if record.series:
                 seq = title_info.find(q("sequence"))
@@ -84,7 +129,7 @@ class FB2MetadataWriter(MetadataWriter):
                 el = pub.find(q("year"))
                 if el is None:
                     el = ET.SubElement(pub, q("year"))
-                el.text = record.published[:4]
+                el.text = str(record.published)[:4]
 
             if record.isbn13 or record.isbn10:
                 el = pub.find(q("isbn"))
