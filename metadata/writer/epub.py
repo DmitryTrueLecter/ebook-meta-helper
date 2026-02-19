@@ -41,6 +41,12 @@ class EPUBMetadataWriter(MetadataWriter):
                     self._set_text(metadata, "dc:language", record.language)
                     self._set_text(metadata, "dc:publisher", record.publisher)
 
+                    # ---- Description + OriginalWork ----
+                    self._set_description(metadata, record)
+
+                    # ---- Tags ----
+                    self._set_list(metadata, "dc:subject", record.tags)
+
                     # ---- Dates ----
                     if record.published:
                         self._set_text(metadata, "dc:date", record.published)
@@ -82,6 +88,37 @@ class EPUBMetadataWriter(MetadataWriter):
             if name.lower().endswith(".opf"):
                 return name
         return None
+
+    def _set_description(self, meta, record: BookRecord):
+        parts = []
+
+        if record.description:
+            parts.append(record.description)
+
+        orig = record.original
+        if orig:
+            orig_title_differs = orig.title and orig.title != record.title
+            orig_authors_differ = orig.authors and orig.authors != record.authors
+
+            if orig_title_differs or orig_authors_differ:
+                block = []
+                if orig.title:
+                    block.append(f"Оригинальное название: {orig.title}")
+                if orig.language:
+                    block.append(f"Язык оригинала: {orig.language}")
+                if orig.authors:
+                    block.append(f"Автор: {', '.join(orig.authors)}")
+                if block:
+                    parts.append("\n".join(block))
+
+        if not parts:
+            return
+
+        text = "\n\n".join(parts)
+        el = meta.find("dc:description", OPF_NS)
+        if el is None:
+            el = ET.SubElement(meta, f"{{{OPF_NS['dc']}}}description")
+        el.text = text
 
     def _set_text(self, meta, tag, value):
         if not value:
