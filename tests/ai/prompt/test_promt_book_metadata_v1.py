@@ -1,4 +1,4 @@
-from ai.prompt.book_metadata_v1 import build_book_metadata_prompt
+from ai.prompt.book_metadata import build_book_metadata_prompt
 from models.book import BookRecord, OriginalWork
 
 

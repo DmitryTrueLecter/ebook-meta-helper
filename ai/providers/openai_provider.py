@@ -6,8 +6,8 @@ from typing import Any, Dict, Optional
 from openai import OpenAI
 
 from ai.base import AIProvider
-from ai.parse.book_metadata_v1 import parse_book_metadata_v1
-from ai.prompt.book_metadata_v1 import build_book_metadata_prompt, build_system_prompt, get_response_format
+from ai.parse.book_metadata import parse_book_metadata
+from ai.prompt.book_metadata import build_book_metadata_prompt, build_system_prompt, get_response_format
 from ai.contracts.schema_loader import get_edition_fields, get_original_fields
 from models.book import BookRecord, OriginalWork
 
@@ -23,7 +23,7 @@ class OpenAIProvider(AIProvider):
 
         try:
             raw = self._call_openai(record)
-            parsed, errors = parse_book_metadata_v1(raw)
+            parsed, errors = parse_book_metadata(raw)
 
             result.errors.extend(errors)
 

@@ -6,12 +6,11 @@ from ai.contracts.schema_loader import (
     get_edition_fields,
     get_original_fields,
     get_confidence_field,
-    parse_type_string,
     validate_field_value,
 )
 
 
-def parse_book_metadata_v1(raw: Any) -> Tuple[Dict[str, Any], List[str]]:
+def parse_book_metadata(raw: Any) -> Tuple[Dict[str, Any], List[str]]:
     """
     Parse AI response into structured metadata.
     Uses schema from book_metadata.v1.json for field definitions.

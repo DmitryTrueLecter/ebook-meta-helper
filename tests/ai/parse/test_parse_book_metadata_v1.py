@@ -1,4 +1,4 @@
-from ai.parse.book_metadata_v1 import parse_book_metadata_v1
+from ai.parse.book_metadata import parse_book_metadata
 from datetime import date
 
 
@@ -17,7 +17,7 @@ def test_valid_response():
         "confidence": 0.8,
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed["edition"]["title"] == "Test"
@@ -45,7 +45,7 @@ def test_all_edition_fields():
         }
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed["edition"]["title"] == "Test Title"
@@ -74,7 +74,7 @@ def test_all_original_fields():
         }
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed["original"]["title"] == "Original Title"
@@ -93,7 +93,7 @@ def test_invalid_types_are_reported():
         "confidence": 5,
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert "edition.authors has invalid type" in errors
     assert "edition.year has invalid type" in errors
@@ -109,7 +109,7 @@ def test_invalid_date_format():
         }
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert any("published" in err and "invalid" in err.lower() for err in errors)
 
@@ -122,7 +122,7 @@ def test_valid_date_parsing():
         }
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed["edition"]["published"] == date(2020, 12, 25)
@@ -138,7 +138,7 @@ def test_json_string_parsing():
     }
     raw_json = json.dumps(raw_dict)
 
-    parsed, errors = parse_book_metadata_v1(raw_json)
+    parsed, errors = parse_book_metadata(raw_json)
 
     assert not errors
     assert parsed["edition"]["title"] == "Test"
@@ -149,7 +149,7 @@ def test_invalid_json_string():
     """Test that invalid JSON string is reported"""
     raw = "not valid json{"
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert errors
     assert "invalid json" in errors[0].lower()
@@ -158,22 +158,22 @@ def test_invalid_json_string():
 def test_confidence_range_validation():
     """Test confidence range validation (0.0 to 1.0)"""
     # Valid confidence
-    parsed, errors = parse_book_metadata_v1({"confidence": 0.5})
+    parsed, errors = parse_book_metadata({"confidence": 0.5})
     assert not errors
     assert parsed["confidence"] == 0.5
 
     # Edge cases
-    parsed, errors = parse_book_metadata_v1({"confidence": 0.0})
+    parsed, errors = parse_book_metadata({"confidence": 0.0})
     assert not errors
 
-    parsed, errors = parse_book_metadata_v1({"confidence": 1.0})
+    parsed, errors = parse_book_metadata({"confidence": 1.0})
     assert not errors
 
     # Out of range
-    parsed, errors = parse_book_metadata_v1({"confidence": 1.5})
+    parsed, errors = parse_book_metadata({"confidence": 1.5})
     assert any("out of range" in err for err in errors)
 
-    parsed, errors = parse_book_metadata_v1({"confidence": -0.1})
+    parsed, errors = parse_book_metadata({"confidence": -0.1})
     assert any("out of range" in err for err in errors)
 
 
@@ -186,7 +186,7 @@ def test_unknown_fields_ignored():
         }
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed["edition"]["title"] == "Test"
@@ -197,7 +197,7 @@ def test_empty_response():
     """Test parsing empty response"""
     raw = {}
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed == {}
@@ -211,7 +211,7 @@ def test_partial_response():
         }
     }
 
-    parsed, errors = parse_book_metadata_v1(raw)
+    parsed, errors = parse_book_metadata(raw)
 
     assert not errors
     assert parsed["edition"]["title"] == "Only Title"
