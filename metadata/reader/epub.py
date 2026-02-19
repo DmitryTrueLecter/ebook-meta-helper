@@ -30,6 +30,17 @@ class EPUBMetadataReader(MetadataReader):
             creators = book.get_metadata("DC", "creator")
             record.authors = [c[0] for c in creators if c and c[0]]
 
+        # ---- Description ----
+        if not record.description:
+            descriptions = book.get_metadata("DC", "description")
+            if descriptions:
+                record.description = descriptions[0][0]
+
+        # ---- Tags (dc:subject) ----
+        if not record.tags:
+            subjects = book.get_metadata("DC", "subject")
+            record.tags = [s[0] for s in subjects if s and s[0]]
+
         # ---- Language ----
         if not record.language:
             langs = book.get_metadata("DC", "language")
