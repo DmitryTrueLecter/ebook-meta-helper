@@ -1,0 +1,151 @@
+{
+  "format": {
+    "type": "json_schema",
+    "name": "book_edition_info",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "edition": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "Full title of this specific edition."
+            },
+            "subtitle": {
+              "type": "string",
+              "description": "Subtitle if exists; empty string if not present."
+            },
+            "authors": {
+              "type": "array",
+              "description": "List of authors for this edition.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": {
+              "type": "string",
+              "description": "A short summary of a book's story"
+            },
+            "series": {
+              "type": "string",
+              "description": "Book series name if part of a series; empty string if not applicable."
+            },
+            "series_index": {
+              "type": "integer",
+              "description": "Position in the series; use 0 if not in a series."
+            },
+            "series_total": {
+              "type": "integer",
+              "description": "Total books in the series if known; use 0 if not known or not a series."
+            },
+            "language": {
+              "type": "string",
+              "description": "Language of this edition (ISO 639-1 code preferred).",
+              "minLength": 2,
+              "maxLength": 20
+            },
+            "publisher": {
+              "type": "string",
+              "description": "Publisher name; empty string if unknown."
+            },
+            "isbn10": {
+              "type": "string",
+              "description": "10-digit ISBN if available; empty string if not present.",
+              "pattern": "^$|^[0-9Xx]{10}$"
+            },
+            "isbn13": {
+              "type": "string",
+              "description": "13-digit ISBN if available; empty string if not present.",
+              "pattern": "^$|^(97[89][0-9]{10})$"
+            },
+            "asin": {
+              "type": "string",
+              "description": "Amazon Standard Identification Number if available; empty string if not present."
+            },
+            "published": {
+              "type": "string",
+              "description": "Publication date in ISO format (YYYY-MM-DD), or empty string if unknown.",
+              "pattern": "^$|^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "year": {
+              "type": "integer",
+              "description": "Publication year (fallback if full date unknown); 0 if not known."
+            },
+            "tags": {
+              "type": "array",
+              "description": "Possible tags for this edition: genre, universe, series name, characters, fractions",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "title",
+            "subtitle",
+            "authors",
+            "description",
+            "series",
+            "series_index",
+            "series_total",
+            "language",
+            "publisher",
+            "isbn10",
+            "isbn13",
+            "asin",
+            "published",
+            "year",
+            "tags"
+          ],
+          "additionalProperties": false
+        },
+        "original": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "Title in original language."
+            },
+            "authors": {
+              "type": "array",
+              "description": "Original authors (may differ for translations).",
+              "items": {
+                "type": "string"
+              }
+            },
+            "language": {
+              "type": "string",
+              "description": "Language of the original work (ISO 639-1 code preferred).",
+              "minLength": 2,
+              "maxLength": 20
+            },
+            "year": {
+              "type": "integer",
+              "description": "Year of original publication; 0 if unknown."
+            }
+          },
+          "required": [
+            "title",
+            "authors",
+            "language",
+            "year"
+          ],
+          "additionalProperties": false
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Confidence level (0.0 to 1.0)",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "edition",
+        "original",
+        "confidence"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

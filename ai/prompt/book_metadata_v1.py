@@ -1,14 +1,38 @@
+import json
+from pathlib import Path
+
 from models.book import BookRecord
 from ai.contracts.schema_loader import (
     get_edition_fields,
     get_original_fields,
-    get_confidence_field,
     get_prompt_label,
-    get_ai_hint,
-    get_field_type,
-    get_rules,
 )
 
+def build_system_prompt() -> str:
+    lines: list[str] = []
+    lines.append(
+        "You are a bibliographic metadata extractor. Given a book file path and partial metadata, identify the complete bibliographic information. "
+        "Field priority: "
+        "Author and title must match exactly (allow transliteration for translations) "
+        "Directory path and filename provide context: may contain author, universe, series/subseries "
+        "Rules: "
+        "If translated (e.g., to Russian), find both translated and original edition metadata "
+        "Never substitute a different author, even for more famous works with same title "
+        "When titles collide, prefer the match consistent with directory context "
+        "Don't fabricate metadata when evidence is insufficient "
+        "Determine work type (novel, story, novella, poem, etc.) "
+        "Provide a non-creative book description based on known publisher or catalog summaries. "
+        "Do not invent plot details. "
+        "If the book is well known, provide its commonly published summary. "
+        "If insufficient information is available, return null in the description field. "
+        "Keep the description factual and neutral. "
+    )
+    return "\n". join(lines)
+
+def get_response_format() -> str:
+    schema_path = Path(__file__).parent / "../contracts/book_metadata.v2.json"
+    with open(schema_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def build_book_metadata_prompt(record: BookRecord) -> str:
     """
@@ -19,19 +43,9 @@ def build_book_metadata_prompt(record: BookRecord) -> str:
 
     lines: list[str] = []
 
-    lines.append(
-        "You are a bibliographic metadata extraction engine."
-    )
-
-    lines.append(
-        "Given partial information about a book file, "
-        "identify the most likely edition and its original work."
-    )
-
     lines.append("\nKnown file context:")
 
     lines.append(f"- Filename: {record.original_filename}")
-    lines.append(f"- Extension: {record.extension}")
 
     if record.directories:
         lines.append(
@@ -70,50 +84,9 @@ def build_book_metadata_prompt(record: BookRecord) -> str:
                     else:
                         lines.append(f"- {label}: {value}")
 
-    # --- Instructions ---
-    lines.append(
-        "\nInstructions:\n"
-        "- Respond ONLY with valid JSON\n"
-        "- Do NOT include explanations or comments\n"
-        "- Omit unknown fields\n"
-        "- Use UTF-8\n"
-    )
-
-    # Add schema rules
-    rules = get_rules()
-    for rule in rules:
-        lines.append(f"- {rule}")
-
-    # --- Contract (dynamically from schema) ---
-    lines.append("\nJSON format (book_metadata_v1):")
-    lines.append("{")
-
-    # Edition section
-    lines.append('  "edition": {')
-    for field_name, field_def in edition_fields.items():
-        type_str = get_field_type(field_def)
-        hint = get_ai_hint(field_def)
-        lines.append(f'    "{field_name}": {type_str},  // {hint}')
-    lines.append("  },")
-
-    # Original section
-    lines.append('  "original": {')
-    for field_name, field_def in original_fields.items():
-        type_str = get_field_type(field_def)
-        hint = get_ai_hint(field_def)
-        lines.append(f'    "{field_name}": {type_str},  // {hint}')
-    lines.append("  },")
-
-    # Confidence
-    conf_field = get_confidence_field()
-    conf_type = get_field_type(conf_field)
-    conf_hint = get_ai_hint(conf_field)
-    lines.append(f'  "confidence": {conf_type}  // {conf_hint}')
-
     lines.append("}")
 
     return "\n".join(lines)
-
 
 def _extract_edition_values(record: BookRecord, edition_fields: dict) -> dict:
     """Extract edition values from BookRecord based on schema fields"""
@@ -128,7 +101,6 @@ def _extract_edition_values(record: BookRecord, edition_fields: dict) -> dict:
             values[field_name] = value
 
     return values
-
 
 def _extract_original_values(record: BookRecord, original_fields: dict) -> dict:
     """Extract original work values from BookRecord based on schema fields"""

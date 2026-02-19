@@ -21,6 +21,12 @@
         "prompt_label": "Authors",
         "ai_hint": "List of authors for this edition"
       },
+      "description": {
+        "type": "string",
+        "optional": true,
+        "prompt_label": "Description",
+        "ai_hint": "A short summary of a book's story"
+      },
       "series": {
         "type": "string",
         "optional": true,
@@ -80,6 +86,12 @@
         "optional": true,
         "prompt_label": "Published year",
         "ai_hint": "Publication year (fallback if full date unknown)"
+      },
+      "tags": {
+        "type": "array[string]",
+        "optional": true,
+        "prompt_label": "Tags",
+        "ai_hint": "Possible tags for this edition: genre, universe, series name, characters, fractions, work type, etc"
       }
     },
     "original": {
@@ -111,7 +123,10 @@
     "confidence": {
       "type": "number",
       "optional": true,
-      "range": [0.0, 1.0],
+      "range": [
+        0.0,
+        1.0
+      ],
       "prompt_label": "Confidence",
       "ai_hint": "Confidence level (0.0 to 1.0)"
     }

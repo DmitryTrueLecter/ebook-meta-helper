@@ -41,4 +41,4 @@ class Debugger:
             entry["record"] = asdict(record)
 
         with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")

@@ -7,7 +7,7 @@ from openai import OpenAI
 
 from ai.base import AIProvider
 from ai.parse.book_metadata_v1 import parse_book_metadata_v1
-from ai.prompt.book_metadata_v1 import build_book_metadata_prompt
+from ai.prompt.book_metadata_v1 import build_book_metadata_prompt, build_system_prompt, get_response_format
 from ai.contracts.schema_loader import get_edition_fields, get_original_fields
 from models.book import BookRecord, OriginalWork
 
@@ -41,25 +41,22 @@ class OpenAIProvider(AIProvider):
 
     def _call_openai(self, record: BookRecord) -> Dict[str, Any]:
         client = self._get_client()
-        prompt = build_book_metadata_prompt(record)
+        system_prompt = build_system_prompt()
+        user_prompt = build_book_metadata_prompt(record)
+        format_prompt = get_response_format()
+        print(system_prompt)
+        print(user_prompt)
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You return only valid JSON.",
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            response_format={"type": "json_object"},
+        response = client.responses.create(
+            model=os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+            reasoning={"effort": "high"},
+            instructions=system_prompt,
+            input=user_prompt,
+            text=format_prompt
         )
 
-        content = response.choices[0].message.content
+        content = response.output_text
+        print(content)
         return json.loads(content)
 
     def _get_client(self) -> OpenAI:

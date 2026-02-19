@@ -23,6 +23,7 @@ class BookRecord:
     title: Optional[str] = None
     subtitle: Optional[str] = None
     authors: List[str] = field(default_factory=list)
+    description: Optional[str] = None
 
     series: Optional[str] = None
     series_index: Optional[int] = None
@@ -40,6 +41,8 @@ class BookRecord:
     # Dates
     published: Optional[date] = None
     year: Optional[int] = None  # legacy / fallback
+
+    tags: List[str] = field(default_factory=list)
 
     # Original work metadata
     original: Optional[OriginalWork] = None
