@@ -26,6 +26,14 @@ def build_system_prompt() -> str:
         "If the book is well known, provide its commonly published summary. "
         "If insufficient information is available, return null in the description field. "
         "Keep the description factual and neutral. "
+        "identify possible tags for this edition. "
+        "Possible tag categories: genre, universe, series name, characters, fractions. "
+        "Rules for tags: "
+        "1. Include only meaningful tags that can be used to group or filter books. "
+        "   Do NOT add tags like book title, volume number, publication date, or other unique identifiers. "
+        "2. Normalize tags: combine duplicates or variants (e.g., 'warhammer 40 000' and 'warhammer 40k' → 'warhammer 40k'). "
+        "3. Do not invent tags. Only include tags directly supported by metadata, filename, directory context, or known external references. "
+        "4. Prefer the most common / standard usage for a tag when variants exist. "
     )
     return "\n". join(lines)
 

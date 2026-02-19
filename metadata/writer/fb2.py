@@ -78,7 +78,7 @@ class FB2MetadataWriter(MetadataWriter):
                 )
             )
 
-            if has_description or has_original:
+            if has_description or has_original or record.tags:
                 annotation = find(title_info, "annotation")
                 if annotation is None:
                     annotation = sub(title_info, "annotation")
@@ -105,12 +105,31 @@ class FB2MetadataWriter(MetadataWriter):
                         p = sub(annotation, "p")
                         p.text = f"Автор: {', '.join(orig.authors)}"
 
+                # Append tags to annotation so readers that don't parse <keywords> still show them
+                if record.tags:
+                    p = sub(annotation, "p")
+                    p.text = f"Теги: {', '.join(record.tags)}"
+
             # ---- Keywords (tags) ----
+            # Per FB2 spec, <keywords> must come after <annotation>.
+            # We write it fresh and then move it to the correct position.
             if record.tags:
-                el = find(title_info, "keywords")
-                if el is None:
-                    el = sub(title_info, "keywords")
-                el.text = ", ".join(record.tags)
+                # Remove existing keywords element if present
+                existing_kw = find(title_info, "keywords")
+                if existing_kw is not None:
+                    title_info.remove(existing_kw)
+
+                # Create new keywords element
+                kw_el = etree.SubElement(title_info, q("keywords"))
+                kw_el.text = ", ".join(record.tags)
+
+                # Move it to just after <annotation> (or <book-title> if no annotation)
+                annotation_el = find(title_info, "annotation")
+                anchor = annotation_el if annotation_el is not None else find(title_info, "book-title")
+                if anchor is not None:
+                    anchor_idx = list(title_info).index(anchor)
+                    title_info.remove(kw_el)
+                    title_info.insert(anchor_idx + 1, kw_el)
 
             # ---- Series ----
             if record.series:
