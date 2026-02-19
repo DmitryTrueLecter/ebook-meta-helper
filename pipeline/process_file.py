@@ -8,6 +8,7 @@ from naming.renamer import build_filename
 from utils.debug import Debugger
 
 from metadata.reader.registry import read_metadata
+from metadata.cleaner import clean_record
 from ai.enrich import enrich
 from metadata.merge.book_record_merger import merge_book_records
 from metadata.writer.registry import write_metadata
@@ -26,6 +27,11 @@ def process_file(record: BookRecord) -> PipelineResult:
     try:
         record_with_meta = read_metadata(record)
         debugger.log("read_metadata", "metadata read from file", record_with_meta)
+
+        # 2a. Clean file metadata from null-equivalent values
+        record_with_meta = clean_record(record_with_meta)
+        debugger.log("clean_file_meta", "cleaned file metadata", record_with_meta)
+
         records.append(record_with_meta)
     except Exception as e:
         errors.append(f"read_metadata: {e}")
@@ -35,7 +41,10 @@ def process_file(record: BookRecord) -> PipelineResult:
     try:
         ai_provider = os.getenv("AI_PROVIDER")
         ai_record = enrich(record, ai_provider)
-        debugger.log("ai_enrich", "AI metadata enrichment", ai_record)
+
+        ai_record = clean_record(ai_record)
+        debugger.log("ai_enrich", "AI metadata enrichment (cleaned)", ai_record)
+
         records.append(ai_record)
     except Exception as e:
         errors.append(f"ai_enrich: {e}")

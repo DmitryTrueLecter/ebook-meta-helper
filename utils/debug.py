@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -40,5 +40,10 @@ class Debugger:
         if record is not None:
             entry["record"] = asdict(record)
 
+        def _json_default(obj):
+            if isinstance(obj, (date, datetime)):
+                return obj.isoformat()
+            return str(obj)
+
         with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+            f.write(json.dumps(entry, ensure_ascii=False, default=_json_default) + "\n")
