@@ -36,7 +36,8 @@ class EPUBMetadataWriter(MetadataWriter):
                         return WriteResult(False, errors=["epub: no metadata"])
 
                     # ---- Basic fields ----
-                    self._set_text(metadata, "dc:title", record.title)
+                    epub_version = root.get("version", "2.0")
+                    self._set_title(metadata, record.title, record.subtitle, epub_version)
                     self._set_list(metadata, "dc:creator", record.authors)
                     self._set_text(metadata, "dc:language", record.language)
                     self._set_text(metadata, "dc:publisher", record.publisher)
@@ -88,6 +89,49 @@ class EPUBMetadataWriter(MetadataWriter):
             if name.lower().endswith(".opf"):
                 return name
         return None
+
+    def _set_title(
+        self,
+        meta: ET.Element,
+        title: str | None,
+        subtitle: str | None,
+        epub_version: str,
+    ) -> None:
+        if not title and not subtitle:
+            return
+
+        dc_title_tag = f"{{{OPF_NS['dc']}}}title"
+
+        # Remove all existing dc:title elements to avoid duplicates
+        for el in meta.findall("dc:title", OPF_NS):
+            meta.remove(el)
+        # Remove any stale title-type refines
+        for el in list(meta.findall("meta")):
+            if (el.get("property") == "title-type"
+                    and el.get("refines") in ("#subtitle", "#main-title")):
+                meta.remove(el)
+
+        if epub_version.startswith("3"):
+            # EPUB 3: separate elements refined by title-type
+            if title:
+                el = ET.SubElement(meta, dc_title_tag)
+                el.set("id", "main-title")
+                el.text = title
+            if subtitle:
+                el = ET.SubElement(meta, dc_title_tag)
+                el.set("id", "subtitle")
+                el.text = subtitle
+                refines = ET.SubElement(meta, "meta")
+                refines.set("refines", "#subtitle")
+                refines.set("property", "title-type")
+                refines.text = "subtitle"
+        else:
+            # EPUB 2: merge into a single dc:title as "Title: Subtitle"
+            combined = title or ""
+            if subtitle:
+                combined = f"{combined}: {subtitle}" if combined else subtitle
+            el = ET.SubElement(meta, dc_title_tag)
+            el.text = combined
 
     def _set_description(self, meta, record: BookRecord):
         parts = []

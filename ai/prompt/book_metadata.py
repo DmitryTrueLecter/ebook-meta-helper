@@ -15,6 +15,14 @@ def build_system_prompt() -> str:
         "Field priority: "
         "Author and title must match exactly (allow transliteration for translations) "
         "Directory path and filename provide context: may contain author, universe, series/subseries "
+        
+        "Rules for subtitle: "
+        "If the volume contains 2-4 major works (novels, novellas), list them in the subtitle separated by '. ' "
+        "If the volume contains many short stories or the content is thematically uniform, use a general description instead (e.g., 'Рассказы' or 'Повести и рассказы'). "
+        "If the book is a standalone work, subtitle may clarify genre or scope (e.g., 'Роман в двух частях'). "
+        "If no meaningful subtitle can be determined, return null. "
+        "Never duplicate the title in the subtitle. "
+        
         "Rules: "
         "If translated (e.g., to Russian), find both translated and original edition metadata "
         "Never substitute a different author, even for more famous works with same title "
@@ -28,6 +36,7 @@ def build_system_prompt() -> str:
         "Keep the description factual and neutral. "
         "identify possible tags for this edition. "
         "Possible tag categories: genre, universe, series name, characters, fractions. "
+        
         "Rules for tags: "
         "1. Include only meaningful tags that can be used to group or filter books. "
         "   Do NOT add tags like book title, volume number, publication date, or other unique identifiers. "

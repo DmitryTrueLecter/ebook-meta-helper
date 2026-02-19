@@ -19,11 +19,38 @@ class EPUBMetadataReader(MetadataReader):
             record.errors.append(f"epub read error: {e}")
             return record
 
-        # ---- Title ----
-        if not record.title:
-            titles = book.get_metadata("DC", "title")
-            if titles:
-                record.title = titles[0][0]
+        # ---- Title + Subtitle ----
+        # Collect all dc:title elements with their attributes (id, etc.)
+        titles = book.get_metadata("DC", "title")
+        if titles:
+            # Build a map of id -> title-type from EPUB3 <meta refines="#id" property="title-type">
+            # ebooklib exposes these via get_metadata("OPF", "meta")
+            title_types: dict[str, str] = {}
+            for value, attrs in book.get_metadata("OPF", "meta"):
+                if not attrs:
+                    continue
+                prop = attrs.get("property", "")
+                refines = attrs.get("refines", "")
+                if prop == "title-type" and refines.startswith("#"):
+                    title_types[refines[1:]] = value  # strip leading '#'
+
+            main_title = None
+            subtitle = None
+            for value, attrs in titles:
+                attrs = attrs or {}
+                elem_id = attrs.get("id", "")
+                title_type = title_types.get(elem_id)
+                if title_type == "subtitle":
+                    if not subtitle:
+                        subtitle = value
+                else:
+                    if not main_title:
+                        main_title = value
+
+            if not record.title and main_title:
+                record.title = main_title
+            if not record.subtitle and subtitle:
+                record.subtitle = subtitle
 
         # ---- Authors ----
         if not record.authors:
