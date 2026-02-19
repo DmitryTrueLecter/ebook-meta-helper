@@ -1,8 +1,9 @@
-import xml.etree.ElementTree as ET
 from datetime import date
 
-from models.book import BookRecord
+from lxml import etree
+
 from metadata.reader.base import MetadataReader
+from models.book import BookRecord
 
 
 class FB2MetadataReader(MetadataReader):
@@ -12,18 +13,24 @@ class FB2MetadataReader(MetadataReader):
 
     def read(self, record: BookRecord) -> BookRecord:
         try:
-            tree = ET.parse(record.path)
+            tree = etree.parse(record.path)
             root = tree.getroot()
         except Exception as e:
             record.errors.append(f"fb2 parse error: {e}")
             return record
 
-        namespace = None
-        if root.tag.startswith("{"):
-            namespace = root.tag.split("}")[0].strip("{")
+        # Extract the primary namespace URI from the root tag
+        nsmap = root.nsmap
+        fb2_ns = None
+        for prefix, uri in nsmap.items():
+            if "fictionbook" in uri.lower():
+                fb2_ns = uri
+                break
+        if fb2_ns is None:
+            fb2_ns = nsmap.get(None) or next(iter(nsmap.values()), "")
 
         def q(tag: str) -> str:
-            return f"{{{namespace}}}{tag}" if namespace else tag
+            return f"{{{fb2_ns}}}{tag}" if fb2_ns else tag
 
         # ---- Title ----
         title_el = root.find(f".//{q('book-title')}")
@@ -39,9 +46,9 @@ class FB2MetadataReader(MetadataReader):
         if not record.authors:
             authors = []
             for author in root.findall(f".//{q('author')}"):
-                first = author.findtext(q("first-name"), default="").strip()
-                last = author.findtext(q("last-name"), default="").strip()
-                middle = author.findtext(q("middle-name"), default="").strip()
+                first = (author.findtext(q("first-name")) or "").strip()
+                last = (author.findtext(q("last-name")) or "").strip()
+                middle = (author.findtext(q("middle-name")) or "").strip()
                 name = " ".join(p for p in (first, middle, last) if p)
                 if name:
                     authors.append(name)

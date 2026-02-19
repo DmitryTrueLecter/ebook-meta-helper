@@ -1,4 +1,4 @@
-from xml.etree import ElementTree as ET
+from lxml import etree
 
 from metadata.writer.base import MetadataWriter, WriteResult
 from models.book import BookRecord
@@ -9,36 +9,51 @@ class FB2MetadataWriter(MetadataWriter):
 
     def write(self, record: BookRecord) -> WriteResult:
         try:
-            tree = ET.parse(record.path)
+            parser = etree.XMLParser(remove_blank_text=False)
+            tree = etree.parse(record.path, parser)
             root = tree.getroot()
 
-            ns = ""
-            if root.tag.startswith("{"):
-                ns = root.tag.split("}")[0] + "}"
+            # Extract the primary namespace URI from the root tag
+            nsmap = root.nsmap
+            fb2_ns = None
+            for prefix, uri in nsmap.items():
+                if "fictionbook" in uri.lower():
+                    fb2_ns = uri
+                    break
+            # Fall back to the default namespace (prefix=None) or the first available one
+            if fb2_ns is None:
+                fb2_ns = nsmap.get(None) or next(iter(nsmap.values()), "")
 
             def q(tag: str) -> str:
-                return f"{ns}{tag}"
+                return f"{{{fb2_ns}}}{tag}" if fb2_ns else tag
+
+            def find(el, tag):
+                return el.find(q(tag))
+
+            def sub(parent, tag):
+                return etree.SubElement(parent, q(tag))
 
             desc = root.find(f".//{q('description')}")
             if desc is None:
                 return WriteResult(False, errors=["fb2: no description"])
 
-            title_info = desc.find(q("title-info"))
+            title_info = find(desc, "title-info")
             if title_info is None:
-                title_info = ET.SubElement(desc, q("title-info"))
+                title_info = sub(desc, "title-info")
 
             # ---- Title ----
+
             if record.title:
-                el = title_info.find(q("book-title"))
+                el = find(title_info, "book-title")
                 if el is None:
-                    el = ET.SubElement(title_info, q("book-title"))
+                    el = sub(title_info, "book-title")
                 el.text = record.title
 
             # ---- Subtitle ----
             if record.subtitle:
-                el = title_info.find(q("subtitle"))
+                el = find(title_info, "subtitle")
                 if el is None:
-                    el = ET.SubElement(title_info, q("subtitle"))
+                    el = sub(title_info, "subtitle")
                 el.text = record.subtitle
 
             # ---- Authors ----
@@ -47,11 +62,11 @@ class FB2MetadataWriter(MetadataWriter):
                     title_info.remove(a)
 
                 for name in record.authors:
-                    author = ET.SubElement(title_info, q("author"))
+                    author = sub(title_info, "author")
                     parts = name.split(" ", 1)
-                    ET.SubElement(author, q("first-name")).text = parts[0]
+                    sub(author, "first-name").text = parts[0]
                     if len(parts) > 1:
-                        ET.SubElement(author, q("last-name")).text = parts[1]
+                        sub(author, "last-name").text = parts[1]
 
             # ---- Annotation (description + OriginalWork) ----
             has_description = bool(record.description)
@@ -64,84 +79,88 @@ class FB2MetadataWriter(MetadataWriter):
             )
 
             if has_description or has_original:
-                annotation = title_info.find(q("annotation"))
+                annotation = find(title_info, "annotation")
                 if annotation is None:
-                    annotation = ET.SubElement(title_info, q("annotation"))
+                    annotation = sub(title_info, "annotation")
                 else:
-                    # Clear existing content
                     for child in list(annotation):
                         annotation.remove(child)
                     annotation.text = None
 
                 if has_description:
-                    p = ET.SubElement(annotation, q("p"))
+                    p = sub(annotation, "p")
                     p.text = record.description
 
                 if has_original:
                     orig = record.original
                     if orig.title and orig.title != record.title:
-                        p = ET.SubElement(annotation, q("p"))
+                        p = sub(annotation, "p")
                         p.text = f"Оригинальное название: {orig.title}"
 
                     if orig.language:
-                        p = ET.SubElement(annotation, q("p"))
+                        p = sub(annotation, "p")
                         p.text = f"Язык оригинала: {orig.language}"
 
                     if orig.authors and orig.authors != record.authors:
-                        p = ET.SubElement(annotation, q("p"))
+                        p = sub(annotation, "p")
                         p.text = f"Автор: {', '.join(orig.authors)}"
 
             # ---- Keywords (tags) ----
             if record.tags:
-                el = title_info.find(q("keywords"))
+                el = find(title_info, "keywords")
                 if el is None:
-                    el = ET.SubElement(title_info, q("keywords"))
+                    el = sub(title_info, "keywords")
                 el.text = ", ".join(record.tags)
 
             # ---- Series ----
             if record.series:
-                seq = title_info.find(q("sequence"))
+                seq = find(title_info, "sequence")
                 if seq is None:
-                    seq = ET.SubElement(title_info, q("sequence"))
+                    seq = sub(title_info, "sequence")
                 seq.set("name", record.series)
                 if record.series_index is not None:
                     seq.set("number", str(record.series_index))
 
             # ---- Language ----
             if record.language:
-                el = title_info.find(q("lang"))
+                el = find(title_info, "lang")
                 if el is None:
-                    el = ET.SubElement(title_info, q("lang"))
+                    el = sub(title_info, "lang")
                 el.text = record.language
 
             # ---- Publish info ----
-            pub = desc.find(q("publish-info"))
+            pub = find(desc, "publish-info")
             if pub is None:
-                pub = ET.SubElement(desc, q("publish-info"))
+                pub = sub(desc, "publish-info")
 
             if record.publisher:
-                el = pub.find(q("publisher"))
+                el = find(pub, "publisher")
                 if el is None:
-                    el = ET.SubElement(pub, q("publisher"))
+                    el = sub(pub, "publisher")
                 el.text = record.publisher
 
             if record.published:
-                el = pub.find(q("year"))
+                el = find(pub, "year")
                 if el is None:
-                    el = ET.SubElement(pub, q("year"))
+                    el = sub(pub, "year")
                 el.text = str(record.published)[:4]
 
             if record.isbn13 or record.isbn10:
-                el = pub.find(q("isbn"))
+                el = find(pub, "isbn")
                 if el is None:
-                    el = ET.SubElement(pub, q("isbn"))
+                    el = sub(pub, "isbn")
                 el.text = record.isbn13 or record.isbn10
 
             # ---- Custom info (non-standard) ----
             self._set_custom(desc, q, "asin", record.asin)
             self._set_custom(desc, q, "series_total", record.series_total)
 
-            tree.write(record.path, encoding="utf-8", xml_declaration=True)
+            tree.write(
+                record.path,
+                encoding="utf-8",
+                xml_declaration=True,
+                pretty_print=False,
+            )
             return WriteResult(True)
 
         except Exception as e:
@@ -154,6 +173,6 @@ class FB2MetadataWriter(MetadataWriter):
             if el.get("info-type") == name:
                 el.text = str(value)
                 return
-        el = ET.SubElement(desc, q("custom-info"))
+        el = etree.SubElement(desc, q("custom-info"))
         el.set("info-type", name)
         el.text = str(value)
