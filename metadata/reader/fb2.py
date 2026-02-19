@@ -48,6 +48,23 @@ class FB2MetadataReader(MetadataReader):
             if authors:
                 record.authors = authors
 
+        # ---- Description ----
+        if not record.description:
+            annotation_el = root.find(f".//{q('annotation')}")
+            if annotation_el is not None:
+                # annotation may contain child tags (p, strong, etc.) — collect all text
+                text = "".join(annotation_el.itertext()).strip()
+                if text:
+                    record.description = text
+
+        # ---- Tags (keywords) ----
+        if not record.tags:
+            keywords_el = root.find(f".//{q('keywords')}")
+            if keywords_el is not None and keywords_el.text:
+                tags = [t.strip() for t in keywords_el.text.split(",") if t.strip()]
+                if tags:
+                    record.tags = tags
+
         # ---- Language ----
         lang_el = root.find(f".//{q('lang')}")
         if lang_el is not None and lang_el.text and not record.language:
