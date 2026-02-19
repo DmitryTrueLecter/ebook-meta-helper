@@ -51,6 +51,7 @@ def _merge_into(target: BookRecord, incoming: BookRecord) -> None:
         "isbn10",
         "isbn13",
         "asin",
+        "description"
     )
 
     for field in scalar_fields:
@@ -60,6 +61,9 @@ def _merge_into(target: BookRecord, incoming: BookRecord) -> None:
     # Authors
     if not target.authors and incoming.authors:
         target.authors = list(incoming.authors)
+
+    if not target.tags and incoming.tags:
+        target.tags = list(incoming.tags)
 
     # Original work
     if target.original is None and incoming.original is not None:
