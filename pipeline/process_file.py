@@ -84,7 +84,7 @@ def process_file(record: BookRecord) -> PipelineResult:
     # 7. Move
     try:
         target_dir = Path(os.environ.get("BOOKS_READY_DIR", "books_ready"))
-        final_path = move_file(path, target_dir, filename)
+        final_path = move_file(path, target_dir, filename, subdirs=record.directories)
         debugger.log("move", f"file moved to {final_path}", final_record)
     except Exception as e:
         debugger.log("move_error", str(e), final_record)

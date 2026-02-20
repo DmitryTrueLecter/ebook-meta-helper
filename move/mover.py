@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 import re
 
@@ -25,6 +24,7 @@ def move_file(
     src: Path,
     dst_dir: Path,
     filename: str,
+    subdirs: list[str] | None = None,
 ) -> Path:
     if not src.exists():
         raise MoveError(f"source file does not exist: {src}")
@@ -32,29 +32,20 @@ def move_file(
     if not src.is_file():
         raise MoveError(f"source is not a file: {src}")
 
-    dst_dir.mkdir(parents=True, exist_ok=True)
+    # Preserve subdirectory structure from BookRecord.directories
+    if subdirs:
+        target_dir = dst_dir.joinpath(*subdirs)
+    else:
+        target_dir = dst_dir
+
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     filename = sanitize_filename(filename)
-    target = dst_dir / filename
+    target = target_dir / filename
 
-    if not target.exists():
-        src.rename(target.resolve())
-        return target
+    # Overwrite existing file if present
+    if target.exists():
+        target.unlink()
 
-    target = _resolve_collision(target)
     src.rename(target.resolve())
     return target
-
-
-def _resolve_collision(base: Path) -> Path:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    stem = base.stem
-    suffix = base.suffix
-    parent = base.parent
-
-    counter = 1
-    while True:
-        candidate = parent / f"{stem}_v{timestamp}_v{counter}{suffix}"
-        if not candidate.exists():
-            return candidate
-        counter += 1
