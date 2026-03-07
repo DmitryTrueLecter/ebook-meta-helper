@@ -1,0 +1,38 @@
+services:
+  app:
+    build: .
+    image: ebook-meta-helper:latest
+    env_file: .env
+    environment:
+      NEW_BOOKS_DIR: /data/new_books
+      BOOKS_READY_DIR: /data/books_ready
+      DEBUG_DIR: /app/debug_logs
+    volumes:
+      - new_books:/data/new_books
+      - books_ready:/data/books_ready
+      - debug_logs:/app/debug_logs
+    restart: unless-stopped
+
+  mariadb:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-ebook_meta}
+      MARIADB_USER: ${MARIADB_USER:-ebook}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-ebook}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -u root -p\"$$MARIADB_ROOT_PASSWORD\" -e 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  new_books:
+  books_ready:
+  debug_logs:
+  mariadb_data:
