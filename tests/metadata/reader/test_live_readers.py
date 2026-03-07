@@ -1,8 +1,8 @@
 from pathlib import Path
 import json
 import pytest
-from models.book import BookRecord
-from metadata.reader.registry import read_metadata
+from app.models.book import BookRecord
+from app.metadata.reader.registry import read_metadata
 
 
 def run_live_test(asset_folder: str):

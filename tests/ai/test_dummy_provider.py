@@ -1,5 +1,5 @@
-from ai.providers.dummy import DummyAIProvider
-from models.book import BookRecord
+from app.ai.providers.dummy import DummyAIProvider
+from app.models.book import BookRecord
 
 
 def test_dummy_ai_provider_basic():

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from models.book import BookRecord
-from metadata.reader.registry import read_metadata
+from app.models.book import BookRecord
+from app.metadata.reader.registry import read_metadata
 
 def test_epub_reader_basic(monkeypatch):
     record = BookRecord(
@@ -18,7 +18,7 @@ def test_epub_reader_basic(monkeypatch):
         ("DC", "language"): [("en", {})]
     }.get((namespace, tag), [])
 
-    with patch("metadata.reader.epub.epub.read_epub", return_value=fake_book):
+    with patch("app.metadata.reader.epub.epub.read_epub", return_value=fake_book):
         record = read_metadata(record)
 
     assert record.title == "EPUB Book"

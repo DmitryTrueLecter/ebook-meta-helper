@@ -1,4 +1,4 @@
-from naming.placeholders import PLACEHOLDERS
+from app.naming.placeholders import PLACEHOLDERS
 from tests.helpers.book_record_factory import make_record
 
 

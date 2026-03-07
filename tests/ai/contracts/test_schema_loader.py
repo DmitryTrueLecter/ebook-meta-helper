@@ -1,6 +1,6 @@
 """Tests for schema_loader functionality"""
 
-from ai.contracts.schema_loader import (
+from app.ai.contracts.schema_loader import (
     get_schema,
     get_edition_fields,
     get_original_fields,

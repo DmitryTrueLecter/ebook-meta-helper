@@ -1,4 +1,4 @@
-from scanner.directory_scanner import scan_directory
+from app.scanner.directory_scanner import scan_directory
 
 
 def test_empty_directory(tmp_path):

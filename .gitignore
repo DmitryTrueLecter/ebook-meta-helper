@@ -209,3 +209,6 @@ __marimo__/
 .idea
 temp
 debug_logs
+
+# Локальные переопределения Docker (пути к книгам и т.п.)
+docker-compose.override.yml

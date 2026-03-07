@@ -1,5 +1,5 @@
-from metadata import read_metadata
-from models.book import BookRecord
+from app.metadata import read_metadata
+from app.models.book import BookRecord
 
 
 def test_fb2_basic_metadata(tmp_path):

@@ -1,6 +1,6 @@
 from datetime import date
 
-from naming.formatter import format_value
+from app.naming.formatter import format_value
 
 
 def test_date_without_format():

@@ -4,11 +4,11 @@ from typing import List
 
 from dotenv import load_dotenv
 
-from ai.enrich import enrich
-from metadata import read_metadata
-from models.book import BookRecord
-from scanner.directory_scanner import scan_directory
-from utils.debug import Debugger
+from app.ai.enrich import enrich
+from app.metadata import read_metadata
+from app.models.book import BookRecord
+from app.scanner.directory_scanner import scan_directory
+from app.utils.debug import Debugger
 
 
 def run_debug() -> None:

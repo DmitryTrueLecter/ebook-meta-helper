@@ -1,6 +1,6 @@
 import pytest
 
-from naming.renamer import build_filename, RenameError
+from app.naming.renamer import build_filename, RenameError
 from tests.helpers.book_record_factory import make_record
 
 

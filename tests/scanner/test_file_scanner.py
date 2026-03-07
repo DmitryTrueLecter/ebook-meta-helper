@@ -1,4 +1,4 @@
-from scanner.file_scanner import scan_file
+from app.scanner.file_scanner import scan_file
 import pytest
 
 

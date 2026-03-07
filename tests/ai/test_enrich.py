@@ -1,5 +1,5 @@
-from models.book import BookRecord
-from ai.enrich import enrich
+from app.models.book import BookRecord
+from app.ai.enrich import enrich
 
 
 def test_dummy_ai_provider_overwrites_metadata():

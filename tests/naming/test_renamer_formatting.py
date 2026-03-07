@@ -1,4 +1,4 @@
-from naming.renamer import build_filename
+from app.naming.renamer import build_filename
 from tests.helpers.book_record_factory import make_record
 
 

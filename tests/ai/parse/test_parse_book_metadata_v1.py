@@ -1,4 +1,4 @@
-from ai.parse.book_metadata import parse_book_metadata
+from app.ai.parse.book_metadata import parse_book_metadata
 from datetime import date
 
 

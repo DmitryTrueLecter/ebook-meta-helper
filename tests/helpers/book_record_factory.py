@@ -1,4 +1,4 @@
-from models.book import BookRecord
+from app.models.book import BookRecord
 
 
 def make_record(

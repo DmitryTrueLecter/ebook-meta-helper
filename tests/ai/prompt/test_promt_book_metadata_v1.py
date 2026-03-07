@@ -1,5 +1,5 @@
-from ai.prompt.book_metadata import build_book_metadata_prompt
-from models.book import BookRecord, OriginalWork
+from app.ai.prompt.book_metadata import build_book_metadata_prompt
+from app.models.book import BookRecord, OriginalWork
 
 
 def test_prompt_contains_required_sections():

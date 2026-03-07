@@ -1,5 +1,5 @@
-from ai.providers import OpenAIProvider
-from models.book import BookRecord
+from app.ai.providers import OpenAIProvider
+from app.models.book import BookRecord
 
 
 def test_openai_provider_v2_applies_edition_and_original(monkeypatch):
