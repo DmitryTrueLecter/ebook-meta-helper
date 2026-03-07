@@ -3,3 +3,9 @@ python-dotenv
 ebooklib
 lxml
 openai
+
+# DB layer
+sqlalchemy>=2.0
+pymysql
+cryptography
+alembic

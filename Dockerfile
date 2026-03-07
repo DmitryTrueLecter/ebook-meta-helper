@@ -11,6 +11,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/
+COPY db/ db/
+COPY alembic/ alembic/
+COPY alembic.ini .
 COPY run_watcher.py run_debug.py .
 
 CMD ["python", "-u", "run_watcher.py"]
