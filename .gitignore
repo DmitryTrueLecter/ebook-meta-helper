@@ -211,3 +211,6 @@ temp
 debug_logs
 
 docker-compose.override.yml
+
+# Frontend
+frontend/node_modules

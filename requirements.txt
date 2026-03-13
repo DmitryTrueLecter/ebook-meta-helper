@@ -9,3 +9,7 @@ sqlalchemy>=2.0
 pymysql
 cryptography
 alembic
+
+# API
+fastapi
+uvicorn[standard]
