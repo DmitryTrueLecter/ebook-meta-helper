@@ -14,6 +14,7 @@ from db.base import Base
 
 if TYPE_CHECKING:
     from db.models.directory import Directory
+    from db.models.metadata import Metadata
 
 
 class FileRecord(Base):
@@ -41,6 +42,9 @@ class FileRecord(Base):
     )
 
     directory: Mapped["Directory"] = relationship("Directory", back_populates="files")
+    metadata_records: Mapped[list["Metadata"]] = relationship(
+        "Metadata", back_populates="file", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<FileRecord id={self.id} filename={self.filename!r}>"
