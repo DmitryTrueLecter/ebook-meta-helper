@@ -1,5 +1,3 @@
-"""Data access: repositories for books, tags, etc."""
+"""Data access: repositories for directories, files, etc."""
 
-from db.repos.book_repo import BookRepo
-
-__all__ = ["BookRepo"]
+__all__: list[str] = []
