@@ -16,14 +16,14 @@ services:
   mariadb:
     image: mariadb:11
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-ebook_meta}
-      MARIADB_USER: ${MARIADB_USER:-ebook}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-ebook}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: ${DB_NAME:-ebook_meta}
+      MARIADB_USER: ${DB_USER:-ebook}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-ebook}
     volumes:
       - mariadb_data:/var/lib/mysql
     ports:
-      - "3306:3306"
+      - "${DB_PORT:-3306}:3306"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "mysql -u root -p\"$$MARIADB_ROOT_PASSWORD\" -e 'SELECT 1' || exit 1"]
