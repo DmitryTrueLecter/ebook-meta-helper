@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf D:/Work/ebook-meta-helper/.claude/areas/api D:/Work/ebook-meta-helper/.claude/areas/core)",
+      "Bash(mkdir -p D:/Work/ebook-meta-helper/.claude/areas/backend)"
+    ]
+  }
+}

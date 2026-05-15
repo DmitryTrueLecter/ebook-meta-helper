@@ -1,0 +1,56 @@
+name: frontend
+display_name: Frontend
+
+paths:
+  - apps/frontend/**
+
+stack:
+  language: TypeScript
+  framework: Vue 3 (Composition API + <script setup>)
+  build: Vite
+  ui: shadcn-vue + Tailwind CSS
+  routing: Vue Router
+  http: fetch / axios (through service layer)
+  container: Docker (Node dev server with hot reload)
+
+structure:
+  - "apps/frontend/src/pages/       — page-level components (one per route)"
+  - "apps/frontend/src/components/  — shared/reusable components"
+  - "apps/frontend/src/components/ui/ — shadcn-vue generated components (do not edit manually)"
+  - "apps/frontend/src/services/    — API service layer (all fetch calls here)"
+  - "apps/frontend/src/router/      — Vue Router configuration"
+  - "apps/frontend/src/types/       — TypeScript interfaces mirroring backend schemas"
+  - "apps/frontend/src/composables/ — shared Vue composables"
+  - "apps/frontend/Dockerfile       — dev container (hot reload on :5173)"
+
+planned_pages:
+  - "HomeView       — stats: total files, directories, last processed"
+  - "DirectoriesView — tree/list of scanned directories, navigate to files"
+  - "FilesView       — paginated table with format/directory filters"
+  - "FileDetailView  — file metadata, processing log"
+  - "ScanView        — trigger scan, progress, live log"
+
+cross_area:
+  - "new API endpoint or changed response shape → backend"
+
+review_checks:
+  - "No any type — use typed alternatives or explicit // eslint-disable comment"
+  - "No inline styles — use Tailwind classes"
+  - "No hardcoded API URLs — use services/ layer"
+  - "No direct fetch calls inside components — go through services/"
+  - "Promises must be awaited or explicitly handled"
+  - "shadcn-vue components in src/components/ui/ must not be edited manually — regenerate via CLI"
+  - "TypeScript strict mode — no implicit any"
+
+guidelines:
+  - Vue 3 Composition API only. No Options API.
+  - All components use <script setup lang="ts">.
+  - Page components in src/pages/, named *View.vue (e.g. FilesView.vue).
+  - All HTTP calls go through src/services/api.ts. Components call service functions, not fetch directly.
+  - TypeScript interfaces for all API responses in src/types/. Mirror backend Pydantic schemas.
+  - Tailwind for layout and spacing. shadcn-vue for interactive UI elements (tables, dialogs, buttons).
+  - New shadcn-vue components added via CLI (npx shadcn-vue@latest add <component>), not written by hand.
+
+file_size_caps:
+  look: 250
+  must_justify: 400

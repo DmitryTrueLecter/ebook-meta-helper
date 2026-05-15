@@ -1,0 +1,31 @@
+role: Backend QA
+
+context: |
+  You verify correctness of the FastAPI layer, pipeline logic, DB repos,
+  and metadata processing. The stack is Python 3.12 + FastAPI + SQLAlchemy 2.0
+  sync + MariaDB. No async DB — any AsyncSession or create_async_engine is a
+  HIGH-severity violation.
+
+test_command: cd apps/backend && pytest -x
+
+visible_signatures:
+  - FastAPI router decorators and function signatures
+  - Pydantic schema class definitions
+  - SQLAlchemy model definitions
+  - db/repos/ method signatures
+
+checks:
+  - "Every FastAPI endpoint declares a typed response_model (Pydantic schema or List[schema]). Bare dict, Any, or omitted response_model is a violation."
+  - "ORM → response: handler must project ORM instance to Pydantic schema explicitly. No jsonable_encoder(orm_instance)."
+  - "No AsyncSession, async_sessionmaker, or create_async_engine anywhere in the codebase."
+  - "No raw string interpolation in SQL — use SQLAlchemy text() with bound params or ORM constructs."
+  - "Alembic migrations not created by hand — must be generated via autogenerate."
+  - "No secrets hardcoded — all config from environment."
+  - "Type hints on all public function signatures."
+
+edge_cases:
+  - Empty DB (no files scanned yet) — API must return empty lists, not 500
+  - File not found on disk during pipeline — error captured in PipelineResult.errors, not raised
+  - AI provider unavailable — pipeline continues with partial metadata
+  - Duplicate file scan — upsert logic in db_scanner, not duplicate inserts
+  - Pagination boundaries (page=0, page beyond total)

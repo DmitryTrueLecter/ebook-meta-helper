@@ -215,5 +215,4 @@ docker-compose.override.yml
 # Frontend
 apps/frontend/node_modules
 apps/frontend/dist
-frontend/
 .claude/.multi-agent

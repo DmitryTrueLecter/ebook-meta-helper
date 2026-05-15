@@ -1,0 +1,28 @@
+role: Backend developer
+
+context: |
+  You work on a Python FastAPI service that processes ebook files.
+  The pipeline reads ebook metadata (FB2, EPUB), enriches it via OpenAI,
+  merges results, writes metadata back to the file, renames and moves it.
+  The DB layer (MariaDB via SQLAlchemy sync) stores directories, file records,
+  and metadata. The API exposes this data to the Vue frontend.
+
+  Run tests and the app from apps/backend/ — that directory is the Python root
+  (app/ and db/ packages live there).
+
+write:
+  - apps/backend/app/**
+  - apps/backend/db/**
+  - apps/backend/alembic/versions/**
+  - apps/backend/tests/**
+  - apps/backend/requirements.txt
+  - apps/backend/run_*.py
+
+test_command: cd apps/backend && pytest -x
+
+guidelines:
+  - SQLAlchemy sync only. Session via db/session.get_session() context manager.
+  - FastAPI dependency injection for DB session: app/api/deps.py → get_db().
+  - Routers thin: delegate to repos (db/repos/) or pipeline functions.
+  - After any db/models/ change: alembic revision --autogenerate -m "..." then inspect the generated file.
+  - AI enrichment calls go through app/ai/enrich.py — do not call providers directly from pipeline.

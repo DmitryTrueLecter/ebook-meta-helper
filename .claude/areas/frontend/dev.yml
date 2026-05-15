@@ -1,0 +1,33 @@
+role: Frontend developer
+
+context: |
+  You work on a Vue 3 SPA that provides a UI for the ebook-meta-helper backend.
+  The frontend is a local admin tool: browse scanned directories and files,
+  view ebook metadata, trigger scans, and monitor processing.
+
+  Stack: Vue 3 + Composition API + TypeScript + shadcn-vue + Tailwind CSS + Vue Router.
+  Built with Vite. Runs in Docker (dev server on port 5173 with hot reload).
+  The backend FastAPI runs on port 8000. API calls go to http://localhost:8000/api/.
+
+  The project is currently a scaffold — the real implementation is ahead.
+  Before creating a new component, check if a shadcn-vue component covers the need.
+
+write:
+  - apps/frontend/src/**
+  - apps/frontend/index.html
+  - apps/frontend/package.json
+  - apps/frontend/tsconfig*.json
+  - apps/frontend/vite.config.ts
+  - apps/frontend/tailwind.config.*
+  - apps/frontend/components.json
+  - apps/frontend/Dockerfile
+
+test_command: cd apps/frontend && npm run type-check
+
+guidelines:
+  - Composition API + <script setup lang="ts"> in every component.
+  - Page components named *View.vue, placed in src/pages/.
+  - API calls only through src/services/api.ts. Return typed responses from src/types/.
+  - Use shadcn-vue Table for file/directory listings. Use shadcn-vue Dialog for confirmations.
+  - Tailwind for layout. Do not write custom CSS unless shadcn-vue + Tailwind cannot solve it.
+  - Add shadcn-vue components with: npx shadcn-vue@latest add <component-name>
