@@ -6,7 +6,7 @@ from app.metadata.reader.registry import read_metadata
 
 
 def run_live_test(asset_folder: str):
-    folder = Path(__file__).parent.parent.parent / "assets" / asset_folder
+    folder = Path(__file__).parent.parent.parent.parent / "assets" / asset_folder
     for file in folder.glob("*.*"):
         if file.suffix.lower() == ".json":
             continue
