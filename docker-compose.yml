@@ -1,6 +1,8 @@
 services:
   app:
-    build: .
+    build:
+      context: apps/backend
+      dockerfile: Dockerfile
     image: ebook-meta-helper:latest
     env_file: .env
     environment:
