@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(rm -rf D:/Work/ebook-meta-helper/.claude/areas/api D:/Work/ebook-meta-helper/.claude/areas/core)",
-      "Bash(mkdir -p D:/Work/ebook-meta-helper/.claude/areas/backend)"
+      "Bash(mkdir -p D:/Work/ebook-meta-helper/.claude/areas/backend)",
+      "PowerShell(Get-Content *)",
+      "Bash(claude mcp *)",
+      "Read(//home/truelecter/Workdir/Personal/notabenoid/**)",
+      "Bash(readlink agents *)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "linear"
+  ]
 }

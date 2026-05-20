@@ -10,7 +10,26 @@ tasks:
   team_key: DMI # team key (issue prefix, e.g. DMI-123)
   project: ebook-meta-helper #  project name within the team
   workflow:
-    statuses: [Todo, In Progress, QA, Code Review, On Hold, Done]
+    statuses:
+      to_do: "To Do"
+      in_progress: "In Progress"
+      qa: "QA"
+      code_review: "Code Review"
+      on_hold: "On Hold"
+      awaiting_merge: "Awaiting Merge"
+      awaiting_ops: "Awaiting Ops"     # create this status in Linear — devops handoff target
+      done: "Done"
+
+# Project-level path fence for the devops agent.
+# Globs are resolved relative to project root. Files matching any glob below
+# are devops's write scope; dev/qa/reviewer treat them as out-of-scope.
+devops_paths:
+  - "apps/*/Dockerfile"
+  - "Dockerfile"
+  - "docker-compose*.yml"
+  - ".dockerignore"
+  - "Justfile"
+  - ".env.example"
 
 runtime:
 
