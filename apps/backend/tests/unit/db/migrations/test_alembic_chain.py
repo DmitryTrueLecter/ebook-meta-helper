@@ -1,10 +1,4 @@
-"""Verify the 001-007 alembic chain renders MariaDB-compatible DDL covering every ORM table.
-
-Tests invoke `alembic upgrade head --sql` (and `downgrade base --sql`) via subprocess —
-the same offline-mode rendering the CI pipeline uses — and assert the generated SQL
-matches the ORM models. This is the closest mechanical check possible without spinning up
-a real MariaDB instance.
-"""
+"""Render alembic 001-007 in offline mode and assert it matches the ORM schema."""
 
 from __future__ import annotations
 
