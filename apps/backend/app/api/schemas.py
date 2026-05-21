@@ -1,8 +1,4 @@
-"""Pydantic response schemas for the API.
-
-ORM models never cross the API boundary; routes project models into these
-schemas explicitly. Field shapes mirror the DB layer but the types are owned here.
-"""
+"""Pydantic response schemas for the API."""
 
 from __future__ import annotations
 

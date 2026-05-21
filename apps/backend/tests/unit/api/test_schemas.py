@@ -15,8 +15,6 @@ from app.api.schemas import (
 )
 
 
-# DirectoryNode -------------------------------------------------------------
-
 class TestDirectoryNode:
     def test_minimal_valid_payload_defaults_children_to_empty_list(self):
         node = DirectoryNode(
@@ -68,8 +66,6 @@ class TestDirectoryNode:
         assert node.name == "Library"
 
 
-# FileListItem --------------------------------------------------------------
-
 class TestFileListItem:
     def test_valid_payload(self):
         item = FileListItem(
@@ -87,8 +83,6 @@ class TestFileListItem:
         assert item.format is None
         assert item.sort_order is None
 
-
-# MetadataSnapshot ----------------------------------------------------------
 
 class TestMetadataSnapshot:
     def _payload(self, **overrides):
@@ -137,8 +131,6 @@ class TestMetadataSnapshot:
         assert snap.data["original"]["language"] == "ru"
 
 
-# ProcessingLogEntry --------------------------------------------------------
-
 class TestProcessingLogEntry:
     def test_valid_payload(self):
         entry = ProcessingLogEntry(
@@ -156,8 +148,6 @@ class TestProcessingLogEntry:
         )
         assert entry.duration_ms is None
 
-
-# ScanJobStatus -------------------------------------------------------------
 
 class TestScanJobStatus:
     def test_valid_payload(self):
