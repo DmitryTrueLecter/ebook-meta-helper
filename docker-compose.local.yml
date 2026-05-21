@@ -1,0 +1,58 @@
+# Local development override (Windows 11 / Docker Desktop).
+#
+# Layer on top of the production base:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up
+#
+# This override:
+#   - drops the Traefik labels and the external `web` network
+#     (Traefik does not run locally; we hit the API directly)
+#   - publishes api on 127.0.0.1:8000 and mariadb on 127.0.0.1:3306
+#   - keeps using HOST_* bind mounts from .env so the developer can point
+#     at any local folder (e.g. D:\Books\inbox)
+#
+# Compose merges this with the base file. Lists merge, scalars override.
+# Notes for Windows:
+#   - HOST_NEW_BOOKS_DIR / HOST_BOOKS_READY_DIR may be Windows paths like
+#     D:\Books\inbox or D:/Books/inbox; Docker Desktop translates them into
+#     the Linux VM. Inside the container they always appear at the Linux
+#     mount target (/data/new_books, /data/books_ready).
+#   - The drive (D:\) must be enabled in Docker Desktop > Settings >
+#     Resources > File sharing.
+#   - Line endings on bind-mounted shell scripts can be a gotcha — keep
+#     scripts as LF in this repo (.gitattributes already enforces it for
+#     *.sh if present).
+
+services:
+  api:
+    # Drop the production Traefik labels by overwriting with an empty list.
+    labels: []
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    # Only attach to the internal backend network locally — no Traefik,
+    # no external `web` network. The empty assignment below replaces the
+    # base list rather than appending.
+    networks:
+      - backend
+
+  watcher:
+    networks:
+      - backend
+
+  mariadb:
+    # Expose MariaDB to the host for debugging (DBeaver, mysql CLI, etc.).
+    # Bound to 127.0.0.1 so it never leaks onto the LAN.
+    ports:
+      - "127.0.0.1:${DB_PORT:-3306}:3306"
+    networks:
+      - backend
+
+# Redeclare networks without `web` so this stack does not require the
+# external `web` network to exist on the developer machine.
+networks:
+  web:
+    external: false
+    # Marked as `external: false` so Compose ignores the base file's
+    # `external: true` declaration. The api/watcher/mariadb services
+    # above do not reference `web`, so this network is unused locally.
+  backend:
+    driver: bridge

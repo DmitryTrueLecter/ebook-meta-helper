@@ -6,7 +6,13 @@
       "PowerShell(Get-Content *)",
       "Bash(claude mcp *)",
       "Read(//home/truelecter/Workdir/Personal/notabenoid/**)",
-      "Bash(readlink agents *)"
+      "Bash(readlink agents *)",
+      "mcp__linear__list_projects",
+      "Bash(Get-ChildItem -Path \"D:\\\\Work\\\\ebook-meta-helper\" -Recurse -Depth 3)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(ConvertTo-Json -Depth 10)",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\Work\\\\ebook-meta-helper\" -Recurse -Depth 3 | Select-Object -Property FullName, PSIsContainer | Sort-Object FullName | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR]  $\\($_.FullName\\)\" } else { \"[FILE] $\\($_.FullName\\)\" } })"
     ]
   },
   "enableAllProjectMcpServers": true,
