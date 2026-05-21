@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    CHAR,
     Numeric,
     String,
     Text,
@@ -54,7 +55,7 @@ class FileRecord(Base):
     format: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     sort_order: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
     size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    hash: Mapped[Optional[str]] = mapped_column(CHAR(64), nullable=True)
     file_modified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     status: Mapped[FileStatus] = mapped_column(
         Enum(FileStatus, name="file_status"),

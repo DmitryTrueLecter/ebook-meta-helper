@@ -15,6 +15,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    CHAR,
     Numeric,
     SmallInteger,
     String,
@@ -59,8 +60,8 @@ class Metadata(Base):
     series_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     series_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     publisher: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    isbn13: Mapped[Optional[str]] = mapped_column(String(13), nullable=True)
-    isbn10: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    isbn13: Mapped[Optional[str]] = mapped_column(CHAR(13), nullable=True)
+    isbn10: Mapped[Optional[str]] = mapped_column(CHAR(10), nullable=True)
     asin: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     published: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     year: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
