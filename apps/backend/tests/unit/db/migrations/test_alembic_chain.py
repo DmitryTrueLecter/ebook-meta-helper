@@ -54,7 +54,7 @@ def upgrade_sql() -> str:
 
 @pytest.fixture(scope="module")
 def downgrade_sql() -> str:
-    return _run_alembic("downgrade", "base:head", "--sql")
+    return _run_alembic("downgrade", "head:base", "--sql")
 
 
 class TestRevisionChain:
