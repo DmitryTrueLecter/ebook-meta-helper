@@ -11,7 +11,7 @@ tasks:
   project: ebook-meta-helper #  project name within the team
   workflow:
     statuses:
-      to_do: "To Do"
+      to_do: "Todo"
       in_progress: "In Progress"
       qa: "QA"
       code_review: "Code Review"
