@@ -1,9 +1,4 @@
-"""Create processing_logs table.
-
-Revision ID: 006
-Revises: 005
-Create Date: 2026-05-21
-"""
+"""Create processing_logs table."""
 
 from typing import Sequence, Union
 

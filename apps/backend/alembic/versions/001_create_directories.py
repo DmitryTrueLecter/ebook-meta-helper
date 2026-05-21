@@ -1,9 +1,4 @@
-"""Create directories table.
-
-Revision ID: 001
-Revises:
-Create Date: 2026-05-21
-"""
+"""Create directories table."""
 
 from typing import Sequence, Union
 

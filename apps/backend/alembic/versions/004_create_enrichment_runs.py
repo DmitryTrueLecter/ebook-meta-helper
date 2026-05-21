@@ -1,9 +1,4 @@
-"""Create enrichment_runs table.
-
-Revision ID: 004
-Revises: 003
-Create Date: 2026-05-21
-"""
+"""Create enrichment_runs table."""
 
 from typing import Sequence, Union
 

@@ -1,9 +1,4 @@
-"""Create scan_jobs table.
-
-Revision ID: 007
-Revises: 006
-Create Date: 2026-05-21
-"""
+"""Create scan_jobs table."""
 
 from typing import Sequence, Union
 
