@@ -216,3 +216,4 @@ docker-compose.override.yml
 apps/frontend/node_modules
 apps/frontend/dist
 .claude/.multi-agent
+.claude/sentinel-inbox
