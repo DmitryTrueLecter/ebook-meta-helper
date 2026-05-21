@@ -1,38 +1,10 @@
-# Git and IDE
-.git
-.gitignore
-.idea
-.cursorignore
-.cursorindexingignore
-
-# Env (use env_file in compose)
-.env
-.env.*
-!.env.example
-
-# Python
-__pycache__
-*.py[cod]
-.venv
-venv
-.pytest_cache
-.ruff_cache
-.mypy_cache
-*.egg-info
-
-# Tests
-tests
-*.cover
-htmlcov
-
-# Debug and temp
-debug_logs
-temp
-*.log
-
-# Docs
+apps/frontend/node_modules
+apps/frontend/dist
+apps/backend/__pycache__
+apps/backend/.pytest_cache
+apps/backend/tests
 docs
-
-# OS
-.DS_Store
-Thumbs.db
+.git
+.env
+*.md
+.claude
