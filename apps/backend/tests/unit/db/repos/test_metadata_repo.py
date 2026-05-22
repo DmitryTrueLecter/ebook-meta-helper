@@ -179,3 +179,8 @@ class TestFindFilesWithAiSuggestion:
 
     def test_empty_input_returns_empty_set(self, session):
         assert metadata_repo.find_files_with_ai_suggestion(session, []) == set()
+
+    def test_returns_empty_set_when_no_matches(self, session):
+        f = _new_file(session)
+        metadata_repo.create(session, _input(f.id, MetadataSource.file))
+        assert metadata_repo.find_files_with_ai_suggestion(session, [f.id]) == set()
