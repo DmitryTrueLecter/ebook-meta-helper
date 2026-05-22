@@ -149,3 +149,32 @@ class TestGetHistory:
 
     def test_returns_empty_for_unknown_file(self, session):
         assert metadata_repo.get_history(session, file_id=999) == []
+
+
+class TestFindFilesWithAiSuggestion:
+    def test_returns_ids_with_current_ai_metadata(self, session):
+        f1 = _new_file(session, "a.epub")
+        f2 = _new_file(session, "b.epub")
+        f3 = _new_file(session, "c.epub")
+        metadata_repo.create(session, _input(f1.id, MetadataSource.ai))
+        metadata_repo.create(session, _input(f2.id, MetadataSource.file))
+        # f3 has nothing
+
+        result = metadata_repo.find_files_with_ai_suggestion(session, [f1.id, f2.id, f3.id])
+        assert result == {f1.id}
+
+    def test_ignores_non_current_ai_rows(self, session):
+        f = _new_file(session)
+        metadata_repo.create(session, _input(f.id, MetadataSource.ai, data={"v": 1}))
+        metadata_repo.create(session, _input(f.id, MetadataSource.ai, data={"v": 2}))
+        # both rows for the same source, latest is current
+        result = metadata_repo.find_files_with_ai_suggestion(session, [f.id])
+        assert result == {f.id}
+
+    def test_returns_empty_set_for_empty_input(self, session):
+        assert metadata_repo.find_files_with_ai_suggestion(session, []) == set()
+
+    def test_returns_empty_set_when_no_matches(self, session):
+        f = _new_file(session)
+        metadata_repo.create(session, _input(f.id, MetadataSource.file))
+        assert metadata_repo.find_files_with_ai_suggestion(session, [f.id]) == set()

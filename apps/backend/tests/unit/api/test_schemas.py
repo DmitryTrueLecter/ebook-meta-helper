@@ -8,8 +8,11 @@ from pydantic import ValidationError
 
 from app.api.schemas import (
     DirectoryNode,
+    EnrichmentTriggerResponse,
+    FileDetail,
     FileListItem,
     MetadataSnapshot,
+    PaginatedFiles,
     ProcessingLogEntry,
     ScanJobStatus,
 )
@@ -163,3 +166,63 @@ class TestScanJobStatus:
             files_processed=100, current_filename=None,
         )
         assert status.current_filename is None
+
+
+class TestPaginatedFiles:
+    def _item(self, **overrides):
+        base = {
+            "id": 1, "filename": "a.epub", "extension": "epub", "format": "EPUB",
+            "status": "pending", "has_ai_suggestion": False, "sort_order": None,
+        }
+        base.update(overrides)
+        return base
+
+    def test_valid_payload(self):
+        page = PaginatedFiles(items=[self._item()], total=42, page=1, page_size=50)
+        assert page.total == 42
+        assert page.items[0].filename == "a.epub"
+
+    def test_empty_items_allowed(self):
+        page = PaginatedFiles(items=[], total=0, page=1, page_size=50)
+        assert page.items == []
+
+
+class TestFileDetail:
+    def _payload(self, **overrides):
+        base = {
+            "id": 7,
+            "directory_id": 3,
+            "filename": "book.epub",
+            "extension": "epub",
+            "format": "EPUB",
+            "status": "enriched",
+            "sort_order": 1.0,
+            "error_message": None,
+            "file_metadata": None,
+            "ai_metadata": None,
+        }
+        base.update(overrides)
+        return base
+
+    def test_minimal_payload_with_no_metadata(self):
+        detail = FileDetail(**self._payload())
+        assert detail.file_metadata is None
+        assert detail.ai_metadata is None
+
+    def test_nested_metadata_snapshots(self):
+        snapshot = {
+            "id": 10, "source": "ai", "is_current": True,
+            "title": "T", "subtitle": None, "language": "en", "series": None,
+            "series_index": None, "isbn13": None, "confidence": 0.9,
+            "data": {}, "created_at": datetime(2026, 5, 1, tzinfo=timezone.utc),
+        }
+        detail = FileDetail(**self._payload(ai_metadata=snapshot))
+        assert detail.ai_metadata is not None
+        assert detail.ai_metadata.title == "T"
+
+
+class TestEnrichmentTriggerResponse:
+    def test_valid_payload(self):
+        resp = EnrichmentTriggerResponse(enrichment_run_id=99, file_id=5, status="ai_queued")
+        assert resp.enrichment_run_id == 99
+        assert resp.status == "ai_queued"

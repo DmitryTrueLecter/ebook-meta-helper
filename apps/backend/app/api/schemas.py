@@ -31,11 +31,20 @@ class FileListItem(BaseModel):
 
     id: int
     filename: str
-    extension: str
+    extension: str | None
     format: str | None
     status: str
     has_ai_suggestion: bool
     sort_order: float | None
+
+
+class PaginatedFiles(BaseModel):
+    """Paginated file listing — `items` plus page metadata."""
+
+    items: list[FileListItem]
+    total: int
+    page: int
+    page_size: int
 
 
 class MetadataSnapshot(BaseModel):
@@ -55,6 +64,31 @@ class MetadataSnapshot(BaseModel):
     confidence: float | None
     data: dict[str, Any]
     created_at: datetime
+
+
+class FileDetail(BaseModel):
+    """Single file with current `file` and `ai` metadata snapshots."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    directory_id: int
+    filename: str
+    extension: str | None
+    format: str | None
+    status: str
+    sort_order: float | None
+    error_message: str | None
+    file_metadata: MetadataSnapshot | None
+    ai_metadata: MetadataSnapshot | None
+
+
+class EnrichmentTriggerResponse(BaseModel):
+    """202 response from POST /api/files/{id}/enrich — exposes the new run id."""
+
+    enrichment_run_id: int
+    file_id: int
+    status: str
 
 
 class ProcessingLogEntry(BaseModel):

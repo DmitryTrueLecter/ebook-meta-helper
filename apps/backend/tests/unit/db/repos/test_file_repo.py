@@ -193,3 +193,76 @@ class TestGetByDirectory:
 
         rows = file_repo.get_by_directory(session, d1.id)
         assert [r.filename for r in rows] == ["x.epub"]
+
+
+class TestGetById:
+    def test_returns_record(self, session):
+        d = _new_directory(session)
+        created = file_repo.get_or_create(session, d.id, "a.epub")
+        assert file_repo.get_by_id(session, created.id) is created
+
+    def test_returns_none_when_missing(self, session):
+        assert file_repo.get_by_id(session, 9999) is None
+
+
+class TestListPaginated:
+    def test_returns_first_page_with_total(self, session):
+        d = _new_directory(session)
+        for i in range(7):
+            file_repo.get_or_create(session, d.id, f"f{i}.epub")
+
+        page = file_repo.list_paginated(session, page=1, page_size=3)
+        assert page.total == 7
+        assert len(page.items) == 3
+        assert [r.filename for r in page.items] == ["f0.epub", "f1.epub", "f2.epub"]
+
+    def test_second_page_offsets_correctly(self, session):
+        d = _new_directory(session)
+        for i in range(7):
+            file_repo.get_or_create(session, d.id, f"f{i}.epub")
+
+        page = file_repo.list_paginated(session, page=2, page_size=3)
+        assert [r.filename for r in page.items] == ["f3.epub", "f4.epub", "f5.epub"]
+
+    def test_filters_by_directory(self, session):
+        d1 = _new_directory(session, path="/d1")
+        d2 = _new_directory(session, path="/d2")
+        file_repo.get_or_create(session, d1.id, "a.epub")
+        file_repo.get_or_create(session, d2.id, "b.epub")
+
+        page = file_repo.list_paginated(session, page=1, page_size=50, directory_id=d2.id)
+        assert page.total == 1
+        assert [r.filename for r in page.items] == ["b.epub"]
+
+    def test_filters_by_status(self, session):
+        d = _new_directory(session)
+        keep = file_repo.get_or_create(session, d.id, "k.epub")
+        skip = file_repo.get_or_create(session, d.id, "s.epub")
+        skip.status = FileStatus.enriched
+        session.flush()
+
+        page = file_repo.list_paginated(session, page=1, page_size=10, status=FileStatus.pending)
+        assert page.total == 1
+        assert [r.id for r in page.items] == [keep.id]
+
+    def test_total_reflects_all_matches_not_page(self, session):
+        d = _new_directory(session)
+        for i in range(5):
+            file_repo.get_or_create(session, d.id, f"f{i}.epub")
+
+        page = file_repo.list_paginated(session, page=1, page_size=2)
+        assert page.total == 5
+        assert len(page.items) == 2
+
+    def test_page_zero_raises(self, session):
+        with pytest.raises(ValueError, match="page must be >= 1"):
+            file_repo.list_paginated(session, page=0, page_size=10)
+
+    def test_page_size_zero_raises(self, session):
+        with pytest.raises(ValueError, match="page_size must be >= 1"):
+            file_repo.list_paginated(session, page=1, page_size=0)
+
+    def test_returns_empty_when_no_matches(self, session):
+        page = file_repo.list_paginated(session, page=1, page_size=10)
+        assert page.total == 0
+        assert page.items == []

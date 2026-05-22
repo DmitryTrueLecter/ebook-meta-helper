@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.routes import files as files_routes
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -40,6 +42,9 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     logger.info("<-- %s %s %s", request.method, request.url.path, response.status_code)
     return response
+
+
+app.include_router(files_routes.router)
 
 
 @app.get("/api/health")
