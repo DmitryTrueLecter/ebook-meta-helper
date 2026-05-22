@@ -98,7 +98,7 @@ def _run_enriching(
         provider_name = os.environ.get("AI_PROVIDER")
         if not provider_name:
             raise RuntimeError("AI_PROVIDER is not set")
-        ai_record = enrich(record, provider_name=provider_name, hint=directory_hint)
+        ai_record = enrich(record, provider_name=provider_name, directory_hint=directory_hint)
         cleaned = clean_record(ai_record)
     except Exception as exc:
         return _fail(ctx, ProcessingStep.ai_enrich, exc)

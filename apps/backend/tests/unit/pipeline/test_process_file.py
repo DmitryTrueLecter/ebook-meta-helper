@@ -58,7 +58,7 @@ def _read_returns(extra_title: str = "From File"):
 
 
 def _enrich_returns(extra_title: str = "AI Title"):
-    def _impl(record: BookRecord, provider_name: str, hint: Optional[dict] = None) -> BookRecord:
+    def _impl(record: BookRecord, provider_name: str, directory_hint: Optional[dict] = None) -> BookRecord:
         record.title = extra_title
         record.authors = ["AI Author"]
         record.language = "en"
@@ -160,8 +160,8 @@ class TestHappyPath:
         monkeypatch.setenv("AI_PROVIDER", "dummy")
         captured: dict = {}
 
-        def _spy_enrich(record, provider_name, hint=None):
-            captured["hint"] = hint
+        def _spy_enrich(record, provider_name, directory_hint=None):
+            captured["directory_hint"] = directory_hint
             captured["provider_name"] = provider_name
             record.source = "ai"
             return record
@@ -179,7 +179,7 @@ class TestHappyPath:
                 session=session,
             )
 
-        assert captured["hint"] == hint
+        assert captured["directory_hint"] == hint
         assert captured["provider_name"] == "dummy"
 
 
@@ -346,9 +346,9 @@ class TestStatusInvariants:
             observed.append(session.get(FileRecord, file_id).status)
             return original_read(record)
 
-        def _watch_enrich(record, provider_name, hint=None):
+        def _watch_enrich(record, provider_name, directory_hint=None):
             observed.append(session.get(FileRecord, file_id).status)
-            return original_enrich(record, provider_name, hint)
+            return original_enrich(record, provider_name, directory_hint)
 
         with patch(
             "app.pipeline.process_file.read_metadata", side_effect=_watch_read
@@ -394,8 +394,8 @@ class TestSignature:
         monkeypatch.setenv("AI_PROVIDER", "dummy")
         captured: dict = {}
 
-        def _spy_enrich(record, provider_name, hint=None):
-            captured["hint"] = hint
+        def _spy_enrich(record, provider_name, directory_hint=None):
+            captured["directory_hint"] = directory_hint
             record.source = "ai"
             return record
 
@@ -410,4 +410,4 @@ class TestSignature:
                 session=session,
             )
 
-        assert captured["hint"] is None
+        assert captured["directory_hint"] is None
