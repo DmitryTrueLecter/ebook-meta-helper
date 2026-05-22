@@ -275,3 +275,113 @@ class TestListPaginated:
         page = file_repo.list_paginated(session, page=100, page_size=3)
         assert page.total == 7
         assert page.items == []
+
+
+class TestResetStalledToPending:
+    """Crash-recovery reset bypasses the state machine on purpose — these
+    transitions are not in the normal allowed-edge list."""
+
+    def test_resets_reading_ai_queued_enriching(self, session):
+        d = _new_directory(session)
+        rec_reading = FileRecord(directory_id=d.id, filename="r.fb2", status=FileStatus.reading)
+        rec_ai = FileRecord(directory_id=d.id, filename="q.fb2", status=FileStatus.ai_queued)
+        rec_enr = FileRecord(directory_id=d.id, filename="e.fb2", status=FileStatus.enriching)
+        session.add_all([rec_reading, rec_ai, rec_enr])
+        session.flush()
+
+        count = file_repo.reset_stalled_to_pending(session)
+        assert count == 3
+
+        for rec in (rec_reading, rec_ai, rec_enr):
+            session.refresh(rec)
+            assert rec.status == FileStatus.pending
+
+    def test_leaves_terminal_and_pending_alone(self, session):
+        d = _new_directory(session)
+        rec_pending = FileRecord(directory_id=d.id, filename="p.fb2", status=FileStatus.pending)
+        rec_enriched = FileRecord(directory_id=d.id, filename="x.fb2", status=FileStatus.enriched)
+        rec_failed = FileRecord(directory_id=d.id, filename="f.fb2", status=FileStatus.failed)
+        rec_accepted = FileRecord(directory_id=d.id, filename="a.fb2", status=FileStatus.accepted)
+        rec_rejected = FileRecord(directory_id=d.id, filename="j.fb2", status=FileStatus.rejected)
+        session.add_all([rec_pending, rec_enriched, rec_failed, rec_accepted, rec_rejected])
+        session.flush()
+
+        count = file_repo.reset_stalled_to_pending(session)
+        assert count == 0
+
+        for rec, expected in (
+            (rec_pending, FileStatus.pending),
+            (rec_enriched, FileStatus.enriched),
+            (rec_failed, FileStatus.failed),
+            (rec_accepted, FileStatus.accepted),
+            (rec_rejected, FileStatus.rejected),
+        ):
+            session.refresh(rec)
+            assert rec.status == expected
+
+    def test_clears_error_message_on_reset(self, session):
+        d = _new_directory(session)
+        rec = FileRecord(
+            directory_id=d.id,
+            filename="r.fb2",
+            status=FileStatus.enriching,
+            error_message="from prior crash",
+        )
+        session.add(rec)
+        session.flush()
+
+        file_repo.reset_stalled_to_pending(session)
+        session.refresh(rec)
+        assert rec.error_message is None
+
+
+class TestListDirectoriesWithPending:
+    def test_returns_only_directories_with_pending_files(self, session):
+        d1 = _new_directory(session, path="/d1")
+        d2 = _new_directory(session, path="/d2")
+        d3 = _new_directory(session, path="/d3")  # has no files at all
+
+        session.add_all([
+            FileRecord(directory_id=d1.id, filename="a.fb2", status=FileStatus.pending),
+            FileRecord(directory_id=d1.id, filename="b.fb2", status=FileStatus.enriched),
+            FileRecord(directory_id=d2.id, filename="c.fb2", status=FileStatus.pending),
+        ])
+        session.flush()
+
+        dirs = file_repo.list_directories_with_pending(session)
+        ids = {d.id for d in dirs}
+        assert ids == {d1.id, d2.id}
+
+    def test_directory_with_no_pending_excluded(self, session):
+        d = _new_directory(session)
+        session.add(FileRecord(directory_id=d.id, filename="done.fb2", status=FileStatus.enriched))
+        session.flush()
+
+        assert file_repo.list_directories_with_pending(session) == []
+
+    def test_deduplicates_directories_with_multiple_pending(self, session):
+        d = _new_directory(session)
+        session.add_all([
+            FileRecord(directory_id=d.id, filename="a.fb2", status=FileStatus.pending),
+            FileRecord(directory_id=d.id, filename="b.fb2", status=FileStatus.pending),
+            FileRecord(directory_id=d.id, filename="c.fb2", status=FileStatus.pending),
+        ])
+        session.flush()
+
+        dirs = file_repo.list_directories_with_pending(session)
+        assert [d.id for d in dirs] == [d.id]
+
+
+class TestCountByStatus:
+    def test_counts_each_status_independently(self, session):
+        d = _new_directory(session)
+        session.add_all([
+            FileRecord(directory_id=d.id, filename="a.fb2", status=FileStatus.pending),
+            FileRecord(directory_id=d.id, filename="b.fb2", status=FileStatus.pending),
+            FileRecord(directory_id=d.id, filename="c.fb2", status=FileStatus.enriched),
+        ])
+        session.flush()
+
+        assert file_repo.count_by_status(session, FileStatus.pending) == 2
+        assert file_repo.count_by_status(session, FileStatus.enriched) == 1
+        assert file_repo.count_by_status(session, FileStatus.failed) == 0
