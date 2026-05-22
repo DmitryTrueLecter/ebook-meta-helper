@@ -1,51 +1,12 @@
-import os
-import time
-from typing import List
+"""Filesystem-poll watcher loop.
 
-from dotenv import load_dotenv
-
-from app.models.book import BookRecord
-from app.pipeline.process_file import process_file
-from app.scanner.directory_scanner import scan_directory
+Deactivated pending Phase 4.3 — the new `process_file` requires a DB session,
+file_id, and enrichment_run_id which the watcher does not yet assemble.
+"""
 
 
 def run_watcher() -> None:
-    load_dotenv()
-
-    new_books_dir = os.environ.get("NEW_BOOKS_DIR")
-    if not new_books_dir:
-        raise RuntimeError("NEW_BOOKS_DIR is not set")
-
-    sleep_seconds = int(os.environ.get("WATCH_SLEEP_SECONDS", "10"))
-
-    print(f"[watcher] watching NEW_BOOKS_DIR: {new_books_dir}")
-    print(f"[watcher] sleep when idle: {sleep_seconds}s")
-
-    while True:
-        try:
-            records: List[BookRecord] = scan_directory(new_books_dir)
-        except Exception as e:
-            print(f"[watcher] scan error: {e}")
-            time.sleep(sleep_seconds)
-            continue
-
-        if not records:
-            time.sleep(sleep_seconds)
-            continue
-
-        for record in records:
-            try:
-                print(f"[watcher] processing: {record.path}")
-                result = process_file(record)
-
-                if result.success:
-                    print(f"[watcher] OK: {record.path}")
-                else:
-                    print(f"[watcher] FAILED: {record.path}")
-                    for err in result.errors:
-                        print(f"  - {err}")
-
-            except Exception as e:
-                print(f"[watcher] unexpected error for {record.path}: {e}")
-
-        time.sleep(1)
+    raise NotImplementedError(
+        "watcher must be updated to build a DB session, FileRecord, and EnrichmentRun "
+        "before calling process_file (DMI-31 Phase 4.3)."
+    )

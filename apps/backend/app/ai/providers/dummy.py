@@ -4,7 +4,7 @@ from app.models.book import BookRecord, OriginalWork
 class DummyAIProvider(AIProvider):
     name = "dummy"
 
-    def enrich(self, record: BookRecord) -> BookRecord:
+    def enrich(self, record: BookRecord, hint: dict | None = None) -> BookRecord:
         record.title = "AI Title"
         record.authors = ["AI Author"]
         record.language = "en"

@@ -18,7 +18,7 @@ class OpenAIProvider(AIProvider):
     def __init__(self) -> None:
         self._client: Optional[OpenAI] = None
 
-    def enrich(self, record: BookRecord) -> BookRecord:
+    def enrich(self, record: BookRecord, hint: dict | None = None) -> BookRecord:
         result = deepcopy(record)
 
         try:
