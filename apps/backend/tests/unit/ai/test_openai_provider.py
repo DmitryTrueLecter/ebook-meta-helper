@@ -5,7 +5,7 @@ from app.models.book import BookRecord
 def test_openai_provider_v2_applies_edition_and_original(monkeypatch):
     provider = OpenAIProvider()
 
-    def fake_call(_record):
+    def fake_call(_record, _directory_hint=None):
         return {
             "edition": {
                 "title": "Восхождение Хоруса",
