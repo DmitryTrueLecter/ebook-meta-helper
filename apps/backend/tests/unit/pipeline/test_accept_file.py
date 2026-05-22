@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.metadata.writer.base import WriteResult
-from app.pipeline.accept_file import AcceptError, accept_file
+from app.pipeline.accept_file import AcceptError, FileNotFound, accept_file
 from db.base import Base
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
@@ -17,6 +17,7 @@ from db.models.metadata import Metadata, MetadataSource
 from db.models.processing_log import ProcessingLog
 import db.models  # noqa: F401 — register all models with Base.metadata
 from db.repos import metadata_repo
+from db.repos.file_repo import InvalidStatusTransition
 from db.repos.metadata_repo import MetadataInput, MetadataScalars
 
 
@@ -123,8 +124,8 @@ class TestAcceptFile:
         assert len(logs) == 1
         assert logs[0].step.value == "write_back"
 
-    def test_raises_when_file_missing(self, session):
-        with pytest.raises(AcceptError, match="not found"):
+    def test_raises_file_not_found_when_file_missing(self, session):
+        with pytest.raises(FileNotFound, match="not found"):
             accept_file(session, 999)
 
     def test_raises_when_no_ai_metadata(self, session, tmp_path, configured_env):
@@ -187,6 +188,100 @@ class TestAcceptFile:
         record, source_path = file_setup
         source_path.unlink()
         with pytest.raises(AcceptError, match="move_file failed"):
+            accept_file(session, record.id)
+
+    def test_raises_before_disk_op_when_status_transition_invalid(
+        self, session, tmp_path, configured_env, stub_write_success
+    ):
+        """State-machine guard runs before any disk write — disk and DB stay in sync on rejection."""
+        target_dir = configured_env
+        source = tmp_path / "book.epub"
+        source.write_bytes(b"placeholder")
+        directory = Directory(path=str(tmp_path), name=tmp_path.name, depth=0)
+        session.add(directory)
+        session.flush()
+        # Status `pending` is not in the allowed predecessors of `accepted`.
+        record = FileRecord(
+            directory_id=directory.id, filename="book.epub", extension="epub",
+            status=FileStatus.pending,
+        )
+        session.add(record)
+        session.flush()
+        metadata_repo.create(
+            session,
+            MetadataInput(
+                file_id=record.id,
+                source=MetadataSource.ai,
+                data={"authors": ["x"]},
+                scalars=MetadataScalars(title="T"),
+            ),
+        )
+
+        with pytest.raises(InvalidStatusTransition):
+            accept_file(session, record.id)
+
+        # Disk untouched: source still in place, ready-dir empty (or not yet created).
+        assert source.exists()
+        assert not target_dir.exists() or not any(target_dir.iterdir())
+        # DB untouched: no accepted snapshot, no log entry, status unchanged.
+        session.refresh(record)
+        assert record.status == FileStatus.pending
+        accepted_rows = (
+            session.query(Metadata)
+            .filter(Metadata.file_id == record.id, Metadata.source == MetadataSource.accepted)
+            .count()
+        )
+        assert accepted_rows == 0
+        log_rows = session.query(ProcessingLog).filter(ProcessingLog.file_id == record.id).count()
+        assert log_rows == 0
+
+    def test_raises_accept_error_when_authors_not_a_list(
+        self, session, file_setup, configured_env, stub_write_success
+    ):
+        """Malformed AI metadata (authors as dict) fails fast — no silent coercion to []."""
+        record, _ = file_setup
+        metadata_repo.create(
+            session,
+            MetadataInput(
+                file_id=record.id,
+                source=MetadataSource.ai,
+                data={"authors": {"not": "a list"}, "tags": []},
+                scalars=MetadataScalars(title="Foundation"),
+            ),
+        )
+        with pytest.raises(AcceptError, match="authors.*must be a list"):
+            accept_file(session, record.id)
+
+    def test_raises_accept_error_when_authors_contain_non_string(
+        self, session, file_setup, configured_env, stub_write_success
+    ):
+        record, _ = file_setup
+        metadata_repo.create(
+            session,
+            MetadataInput(
+                file_id=record.id,
+                source=MetadataSource.ai,
+                data={"authors": ["ok", 42], "tags": []},
+                scalars=MetadataScalars(title="Foundation"),
+            ),
+        )
+        with pytest.raises(AcceptError, match=r"authors'\[1\] must be a string"):
+            accept_file(session, record.id)
+
+    def test_raises_accept_error_when_directories_not_a_list(
+        self, session, file_setup, configured_env, stub_write_success
+    ):
+        record, _ = file_setup
+        metadata_repo.create(
+            session,
+            MetadataInput(
+                file_id=record.id,
+                source=MetadataSource.ai,
+                data={"authors": ["x"], "directories": "sci-fi"},
+                scalars=MetadataScalars(title="Foundation"),
+            ),
+        )
+        with pytest.raises(AcceptError, match="directories.*must be a list"):
             accept_file(session, record.id)
 
     def test_merges_file_and_ai_snapshots_ai_wins(

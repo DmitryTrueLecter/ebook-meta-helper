@@ -14,19 +14,24 @@ from sqlalchemy.orm import Session
 from app.metadata.merge.book_record_merger import merge_book_records
 from app.metadata.writer.registry import write_metadata
 from app.models.book import BookRecord
-import app.metadata.writer  # noqa: F401 — registers FB2/EPUB writers on import.
 from app.move.mover import MoveError, move_file
 from app.naming.renamer import build_filename
 from db.models.file_record import FileRecord, FileStatus
 from db.models.metadata import Metadata, MetadataSource
 from db.models.processing_log import ProcessingLogLevel, ProcessingStep
 from db.repos import file_repo, log_repo, metadata_repo
+from db.repos.file_repo import InvalidStatusTransition
 from db.repos.log_repo import LogEntry
 from db.repos.metadata_repo import MetadataInput, MetadataScalars
+import app.metadata.writer  # noqa: F401 — registers FB2/EPUB writers on import.
 
 
 class AcceptError(Exception):
     """Raised when accepting a file cannot proceed (no AI suggestion, missing config, IO error)."""
+
+
+class FileNotFound(Exception):
+    """Raised when accept_file is called for a missing file_id."""
 
 
 @dataclass(frozen=True)
@@ -41,7 +46,12 @@ def accept_file(session: Session, file_id: int) -> AcceptResult:
     """Merge current ai+file metadata, write back, rename+move, snapshot, transition to accepted."""
     record = file_repo.get_by_id(session, file_id)
     if record is None:
-        raise AcceptError(f"FileRecord {file_id} not found")
+        raise FileNotFound(f"FileRecord {file_id} not found")
+
+    # State-machine guard runs BEFORE any disk op — disk and DB must not diverge if the
+    # transition is invalid (e.g. accept on a non-enriched file).
+    if not file_repo.transition(record.status, FileStatus.accepted):
+        raise InvalidStatusTransition(record.status, FileStatus.accepted)
 
     ai_snapshot = metadata_repo.get_current(session, file_id, MetadataSource.ai)
     if ai_snapshot is None:
@@ -99,14 +109,17 @@ def _snapshot_to_book_record(
     source_path: Path, record: FileRecord, snapshot: Metadata
 ) -> BookRecord:
     data = snapshot.data if isinstance(snapshot.data, dict) else {}
-    authors = _string_list(data.get("authors"))
-    tags = _string_list(data.get("tags"))
+    authors = _string_list(data.get("authors"), field="authors", snapshot_id=snapshot.id)
+    tags = _string_list(data.get("tags"), field="tags", snapshot_id=snapshot.id)
     description = _optional_string(data.get("description"))
+    directories = _string_list(
+        data.get("directories"), field="directories", snapshot_id=snapshot.id
+    )
     return BookRecord(
         path=str(source_path),
         original_filename=record.filename,
         extension=(record.extension or source_path.suffix.lstrip(".")).lower(),
-        directories=_string_list(data.get("directories")),
+        directories=directories,
         title=snapshot.title,
         subtitle=snapshot.subtitle,
         authors=authors,
@@ -176,10 +189,24 @@ def _accepted_input(
     )
 
 
-def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
+def _string_list(value: Any, field: str, snapshot_id: int) -> list[str]:
+    if value is None:
         return []
-    return [str(item) for item in value if isinstance(item, (str, int, float)) and str(item)]
+    if not isinstance(value, list):
+        raise AcceptError(
+            f"metadata snapshot {snapshot_id}: field '{field}' must be a list of strings, "
+            f"got {type(value).__name__}"
+        )
+    result: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise AcceptError(
+                f"metadata snapshot {snapshot_id}: field '{field}'[{index}] must be a string, "
+                f"got {type(item).__name__}"
+            )
+        if item:
+            result.append(item)
+    return result
 
 
 def _optional_string(value: Any) -> Optional[str]:

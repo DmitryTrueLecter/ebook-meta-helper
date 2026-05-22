@@ -275,11 +275,10 @@ class TestAccept:
 
     def test_returns_updated_list_item_on_success(self, client, monkeypatch):
         test_client, session = client
-        record_before = _make_file(status_value=FileStatus.enriched)
         record_after = _make_file(status_value=FileStatus.accepted)
-        get_by_id_calls = iter([record_before, record_after])
 
-        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: next(get_by_id_calls))
+        # Endpoint only reloads once (post-commit) — accept_file owns the not-found check.
+        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record_after)
         monkeypatch.setattr(routes, "accept_file", lambda _s, _id: None)
 
         response = test_client.post("/api/files/1/accept")
@@ -291,13 +290,18 @@ class TestAccept:
 
     def test_404_when_file_missing(self, client, monkeypatch):
         test_client, _ = client
-        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: None)
+
+        def boom(_s, _id):
+            raise routes.FileNotFound("FileRecord 999 not found")
+
+        monkeypatch.setattr(routes, "accept_file", boom)
+
         response = test_client.post("/api/files/999/accept")
         assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
 
     def test_409_when_accept_service_raises(self, client, monkeypatch):
         test_client, session = client
-        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: _make_file())
 
         def boom(_s, _id):
             raise routes.AcceptError("no AI metadata to accept")
@@ -311,7 +315,6 @@ class TestAccept:
 
     def test_409_on_invalid_status_transition(self, client, monkeypatch):
         test_client, _ = client
-        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: _make_file())
 
         def boom(_s, _id):
             raise InvalidStatusTransition(FileStatus.pending, FileStatus.accepted)
@@ -403,6 +406,61 @@ class TestEnrich:
         monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: None)
         response = test_client.post("/api/files/999/enrich")
         assert response.status_code == 404
+
+    def test_idempotent_when_already_queued_returns_existing_run(self, client, monkeypatch):
+        """Re-POSTing /enrich on an already-queued file returns the existing run, not a new one."""
+        test_client, session = client
+        record = _make_file(status_value=FileStatus.ai_queued, directory_id=7)
+        existing_run = SimpleNamespace(id=99)
+        create_calls = []
+        update_calls = []
+
+        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record)
+        monkeypatch.setattr(
+            routes.enrichment_run_repo, "find_latest_running",
+            lambda _s, dir_id, trig: existing_run,
+        )
+
+        def fail_create(_s, _spec):
+            create_calls.append(_spec)
+            return SimpleNamespace(id=999)
+
+        def fail_update(_s, _id, _ns):
+            update_calls.append(_ns)
+            return record
+
+        monkeypatch.setattr(routes.enrichment_run_repo, "create", fail_create)
+        monkeypatch.setattr(routes.file_repo, "update_status", fail_update)
+
+        response = test_client.post("/api/files/1/enrich")
+        assert response.status_code == 202
+        body = response.json()
+        assert body["enrichment_run_id"] == 99
+        assert body["status"] == "ai_queued"
+        assert create_calls == []
+        assert update_calls == []
+        session.commit.assert_not_called()
+
+    def test_idempotent_when_already_queued_but_no_running_run_creates_new(self, client, monkeypatch):
+        """If status is ai_queued but no running run exists, fall through to normal create."""
+        test_client, _ = client
+        record = _make_file(status_value=FileStatus.ai_queued, directory_id=7)
+        new_run = SimpleNamespace(id=5)
+
+        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record)
+        monkeypatch.setattr(
+            routes.enrichment_run_repo, "find_latest_running",
+            lambda _s, dir_id, trig: None,
+        )
+        monkeypatch.setattr(
+            routes.file_repo, "update_status",
+            lambda _s, _id, _ns: _make_file(status_value=FileStatus.ai_queued),
+        )
+        monkeypatch.setattr(routes.enrichment_run_repo, "create", lambda _s, _spec: new_run)
+
+        response = test_client.post("/api/files/1/enrich")
+        assert response.status_code == 202
+        assert response.json()["enrichment_run_id"] == 5
 
     def test_enrichment_run_uses_user_file_trigger_and_directory_id(self, client, monkeypatch):
         test_client, _ = client

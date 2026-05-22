@@ -16,7 +16,7 @@ from app.api.schemas import (
     PaginatedFiles,
     ProcessingLogEntry,
 )
-from app.pipeline.accept_file import AcceptError, accept_file
+from app.pipeline.accept_file import AcceptError, FileNotFound, accept_file
 from db.models.enrichment_run import EnrichmentTrigger
 from db.models.file_record import FileRecord, FileStatus
 from db.models.metadata import Metadata, MetadataSource
@@ -92,9 +92,12 @@ def list_file_logs(
 @router.post("/{file_id}/accept", response_model=FileListItem)
 def accept_file_endpoint(file_id: int, db: Session = Depends(get_db)) -> FileListItem:
     """Apply the current AI suggestion — write metadata back, rename, move, snapshot, mark accepted."""
-    _require_file(db, file_id)
     try:
         accept_file(db, file_id)
+    except FileNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except (AcceptError, InvalidStatusTransition) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
@@ -130,6 +133,18 @@ def enrich_file_endpoint(
     """Queue the file for AI re-enrichment — watcher picks up `ai_queued` rows on the next cycle."""
     record = _require_file(db, file_id)
     directory_id = record.directory_id
+    # Idempotent on already-queued: user_file runs are never finished in this flow,
+    # so a naive re-queue would accumulate permanent orphan running rows.
+    if record.status == FileStatus.ai_queued:
+        existing = enrichment_run_repo.find_latest_running(
+            db, directory_id, EnrichmentTrigger.user_file
+        )
+        if existing is not None:
+            return EnrichmentTriggerResponse(
+                enrichment_run_id=existing.id,
+                file_id=file_id,
+                status=record.status.value,
+            )
     try:
         updated = file_repo.update_status(db, file_id, FileStatus.ai_queued)
     except InvalidStatusTransition as exc:
