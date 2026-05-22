@@ -149,3 +149,33 @@ class TestGetHistory:
 
     def test_returns_empty_for_unknown_file(self, session):
         assert metadata_repo.get_history(session, file_id=999) == []
+
+
+class TestFindFilesWithAiSuggestion:
+    def test_returns_subset_with_current_ai_metadata(self, session):
+        f1 = _new_file(session, "a.epub")
+        f2 = _new_file(session, "b.epub")
+        f3 = _new_file(session, "c.epub")
+
+        metadata_repo.create(session, _input(f1.id, MetadataSource.ai, data={"v": 1}))
+        metadata_repo.create(session, _input(f2.id, MetadataSource.file, data={"v": 2}))
+        # f3: no metadata at all
+
+        result = metadata_repo.find_files_with_ai_suggestion(
+            session, [f1.id, f2.id, f3.id]
+        )
+        assert result == {f1.id}
+
+    def test_superseded_ai_row_does_not_appear(self, session):
+        f = _new_file(session, "a.epub")
+        first = metadata_repo.create(session, _input(f.id, MetadataSource.ai, data={"v": 1}))
+        metadata_repo.create(session, _input(f.id, MetadataSource.ai, data={"v": 2}))
+
+        session.refresh(first)
+        assert first.is_current is False  # flipped by the second insert
+
+        result = metadata_repo.find_files_with_ai_suggestion(session, [f.id])
+        assert result == {f.id}  # the still-current second row keeps it in the set
+
+    def test_empty_input_returns_empty_set(self, session):
+        assert metadata_repo.find_files_with_ai_suggestion(session, []) == set()
