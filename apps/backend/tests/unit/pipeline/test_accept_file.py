@@ -181,6 +181,14 @@ class TestAcceptFile:
         with pytest.raises(AcceptError, match="FILENAME_TEMPLATE"):
             accept_file(session, record.id)
 
+    def test_raises_accept_error_when_source_file_missing_on_disk(
+        self, session, file_setup, configured_env, stub_write_success
+    ):
+        record, source_path = file_setup
+        source_path.unlink()
+        with pytest.raises(AcceptError, match="move_file failed"):
+            accept_file(session, record.id)
+
     def test_merges_file_and_ai_snapshots_ai_wins(
         self, session, file_setup, configured_env, stub_write_success, monkeypatch
     ):

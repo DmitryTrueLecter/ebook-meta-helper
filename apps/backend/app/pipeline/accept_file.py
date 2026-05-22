@@ -15,7 +15,7 @@ from app.metadata.merge.book_record_merger import merge_book_records
 from app.metadata.writer.registry import write_metadata
 from app.models.book import BookRecord
 import app.metadata.writer  # noqa: F401 — registers FB2/EPUB writers on import.
-from app.move.mover import move_file
+from app.move.mover import MoveError, move_file
 from app.naming.renamer import build_filename
 from db.models.file_record import FileRecord, FileStatus
 from db.models.metadata import Metadata, MetadataSource
@@ -137,7 +137,10 @@ def _rename_and_move(source_path: Path, merged: BookRecord) -> Path:
 
     base = build_filename(merged, template)
     filename = f"{base}.{merged.extension}"
-    return move_file(source_path, Path(target_dir_raw), filename, subdirs=merged.directories)
+    try:
+        return move_file(source_path, Path(target_dir_raw), filename, subdirs=merged.directories)
+    except MoveError as exc:
+        raise AcceptError(f"move_file failed for {source_path}: {exc}") from exc
 
 
 def _accepted_input(

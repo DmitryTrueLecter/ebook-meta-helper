@@ -266,3 +266,12 @@ class TestListPaginated:
         page = file_repo.list_paginated(session, page=1, page_size=10)
         assert page.total == 0
         assert page.items == []
+
+    def test_page_beyond_total_returns_empty_items_with_full_total(self, session):
+        d = _new_directory(session)
+        for i in range(7):
+            file_repo.get_or_create(session, d.id, f"f{i}.epub")
+
+        page = file_repo.list_paginated(session, page=100, page_size=3)
+        assert page.total == 7
+        assert page.items == []
