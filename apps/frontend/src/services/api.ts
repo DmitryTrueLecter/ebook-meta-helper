@@ -42,7 +42,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 // GET /api/directories — full tree, roots first.
 export async function listDirectories(): Promise<DirectoryNode[]> {
   const tree = await apiFetch<DirectoryNode[]>('/directories')
-  return tree ?? []
+  if (tree === null) {
+    throw new Error('Directories listing returned an empty response')
+  }
+  return tree
 }
 
 // GET /api/directories/{id} — directory + its files. Optional status filter.
