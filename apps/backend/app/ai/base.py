@@ -8,9 +8,5 @@ class AIProvider(ABC):
 
     @abstractmethod
     def enrich(self, record: BookRecord, hint: dict | None = None) -> BookRecord:
-        """
-        Takes BookRecord and an optional directory-level hint dict.
-        Returns NEW BookRecord.
-        Must NOT mutate input.
-        """
+        """Return a NEW enriched BookRecord; must not mutate input."""
         raise NotImplementedError

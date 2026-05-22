@@ -1,16 +1,12 @@
-"""Pipeline: read embedded metadata, AI-enrich, persist snapshots and step logs.
-
-Stops at FileStatus.enriched. Write-back, rename, and move are user-triggered
-by the API and live elsewhere.
-"""
+"""Pipeline: read embedded metadata, AI-enrich, persist snapshots and step logs."""
 
 from __future__ import annotations
 
 import os
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +23,15 @@ from db.repos.log_repo import LogEntry
 from db.repos.metadata_repo import MetadataInput, MetadataScalars
 
 
+@dataclass(frozen=True)
+class _StepContext:
+    file_id: int
+    enrichment_run_id: int
+    session: Session
+
+
+# DEV-FN-SHAPE waiver: 5-param signature is a public contract from the architect's
+# spec — caller passes a per-file context the function cannot synthesize itself.
 def process_file(
     record: BookRecord,
     file_id: int,
@@ -34,88 +39,60 @@ def process_file(
     directory_hint: dict | None,
     session: Session,
 ) -> PipelineResult:
-    """Read → clean → save (source=file), then enrich → clean → save (source=ai).
+    """Step boundaries commit so AI/network work runs outside an open transaction."""
+    ctx = _StepContext(file_id=file_id, enrichment_run_id=enrichment_run_id, session=session)
 
-    Step boundaries commit so AI/network work runs outside an open transaction.
-    Any step failure routes the FileRecord to FileStatus.failed with the error
-    message and returns PipelineResult(success=False).
-    """
-    after_reading = _run_reading(record, file_id, enrichment_run_id, session)
+    after_reading = _run_reading(record, ctx)
     if not after_reading.success:
         return after_reading
 
-    return _run_enriching(
-        record=after_reading.record or record,
-        file_id=file_id,
-        enrichment_run_id=enrichment_run_id,
-        directory_hint=directory_hint,
-        session=session,
-    )
+    return _run_enriching(after_reading.record, directory_hint, ctx)
 
 
-def _run_reading(
-    record: BookRecord,
-    file_id: int,
-    enrichment_run_id: int,
-    session: Session,
-) -> PipelineResult:
-    file_repo.update_status(session, file_id, FileStatus.reading)
+def _run_reading(record: BookRecord, ctx: _StepContext) -> PipelineResult:
+    file_repo.update_status(ctx.session, ctx.file_id, FileStatus.reading)
 
     try:
         read_result = read_metadata(record)
         cleaned = clean_record(read_result)
     except Exception as exc:
-        return _fail(
-            session=session,
-            file_id=file_id,
-            enrichment_run_id=enrichment_run_id,
-            step=ProcessingStep.read_metadata,
-            error=exc,
-        )
+        return _fail(ctx, ProcessingStep.read_metadata, exc)
 
     try:
         metadata_repo.create(
-            session,
+            ctx.session,
             MetadataInput(
-                file_id=file_id,
+                file_id=ctx.file_id,
                 source=MetadataSource.file,
                 data=_record_to_data(cleaned),
                 scalars=_record_to_scalars(cleaned),
             ),
         )
-        file_repo.update_status(session, file_id, FileStatus.ai_queued)
+        file_repo.update_status(ctx.session, ctx.file_id, FileStatus.ai_queued)
         log_repo.write(
-            session,
+            ctx.session,
             LogEntry(
-                file_id=file_id,
-                enrichment_run_id=enrichment_run_id,
+                file_id=ctx.file_id,
+                enrichment_run_id=ctx.enrichment_run_id,
                 step=ProcessingStep.read_metadata,
                 level=ProcessingLogLevel.info,
                 message="file metadata read and stored",
             ),
         )
-        session.commit()
+        ctx.session.commit()
     except Exception as exc:
-        return _fail(
-            session=session,
-            file_id=file_id,
-            enrichment_run_id=enrichment_run_id,
-            step=ProcessingStep.read_metadata,
-            error=exc,
-        )
+        return _fail(ctx, ProcessingStep.read_metadata, exc)
 
     return PipelineResult(success=True, record=cleaned)
 
 
 def _run_enriching(
     record: BookRecord,
-    file_id: int,
-    enrichment_run_id: int,
     directory_hint: dict | None,
-    session: Session,
+    ctx: _StepContext,
 ) -> PipelineResult:
-    file_repo.update_status(session, file_id, FileStatus.enriching)
-    session.commit()  # release the lock before the network call
+    file_repo.update_status(ctx.session, ctx.file_id, FileStatus.enriching)
+    ctx.session.commit()  # release the lock before the network call
 
     try:
         provider_name = os.environ.get("AI_PROVIDER")
@@ -124,74 +101,54 @@ def _run_enriching(
         ai_record = enrich(record, provider_name=provider_name, hint=directory_hint)
         cleaned = clean_record(ai_record)
     except Exception as exc:
-        return _fail(
-            session=session,
-            file_id=file_id,
-            enrichment_run_id=enrichment_run_id,
-            step=ProcessingStep.ai_enrich,
-            error=exc,
-        )
+        return _fail(ctx, ProcessingStep.ai_enrich, exc)
 
     try:
         metadata_repo.create(
-            session,
+            ctx.session,
             MetadataInput(
-                file_id=file_id,
+                file_id=ctx.file_id,
                 source=MetadataSource.ai,
                 data=_record_to_data(cleaned),
-                enrichment_run_id=enrichment_run_id,
+                enrichment_run_id=ctx.enrichment_run_id,
                 scalars=_record_to_scalars(cleaned),
             ),
         )
-        file_repo.update_status(session, file_id, FileStatus.enriched)
+        file_repo.update_status(ctx.session, ctx.file_id, FileStatus.enriched)
         log_repo.write(
-            session,
+            ctx.session,
             LogEntry(
-                file_id=file_id,
-                enrichment_run_id=enrichment_run_id,
+                file_id=ctx.file_id,
+                enrichment_run_id=ctx.enrichment_run_id,
                 step=ProcessingStep.ai_enrich,
                 level=ProcessingLogLevel.info,
                 message="AI enrichment stored",
             ),
         )
-        session.commit()
+        ctx.session.commit()
     except Exception as exc:
-        return _fail(
-            session=session,
-            file_id=file_id,
-            enrichment_run_id=enrichment_run_id,
-            step=ProcessingStep.ai_enrich,
-            error=exc,
-        )
+        return _fail(ctx, ProcessingStep.ai_enrich, exc)
 
     return PipelineResult(success=True, record=cleaned)
 
 
-def _fail(
-    *,
-    session: Session,
-    file_id: int,
-    enrichment_run_id: int,
-    step: ProcessingStep,
-    error: BaseException,
-) -> PipelineResult:
-    """Roll back, write a failure log + flip status to failed, commit."""
-    session.rollback()
+def _fail(ctx: _StepContext, step: ProcessingStep, error: BaseException) -> PipelineResult:
+    ctx.session.rollback()
     message = f"{step.value}: {error}"
     file_repo.update_status(
-        session, file_id, FileStatus.failed, error_message=message
+        ctx.session, ctx.file_id, FileStatus.failed, error_message=message
     )
     log_repo.write(
-        session,
+        ctx.session,
         LogEntry(
-            file_id=file_id,
-            enrichment_run_id=enrichment_run_id,
+            file_id=ctx.file_id,
+            enrichment_run_id=ctx.enrichment_run_id,
             step=step,
             level=ProcessingLogLevel.error,
             message=message,
         ),
     )
-    session.commit()
+    ctx.session.commit()
     return PipelineResult(success=False, errors=[message])
 
 
@@ -214,7 +171,6 @@ def _record_to_scalars(record: BookRecord) -> MetadataScalars:
 
 
 def _record_to_data(record: BookRecord) -> dict[str, Any]:
-    """asdict() with date/datetime → ISO strings so JSON serialization stays trivial."""
     return _jsonify(asdict(record))
 
 

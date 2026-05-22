@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import Optional
 from unittest.mock import patch
 
-import pytest
-
 from app.models.book import BookRecord
 from app.pipeline.process_file import process_file
 from db.models.directory import Directory
@@ -18,9 +16,6 @@ from db.models.processing_log import (
     ProcessingLogLevel,
     ProcessingStep,
 )
-
-
-# ---------- helpers ----------
 
 
 def _make_record(path: str = "/lib/book.fb2", title: str = "Original Title") -> BookRecord:
@@ -72,9 +67,6 @@ def _enrich_returns(extra_title: str = "AI Title"):
         return record
 
     return _impl
-
-
-# ---------- success paths ----------
 
 
 class TestHappyPath:
@@ -191,9 +183,6 @@ class TestHappyPath:
         assert captured["provider_name"] == "dummy"
 
 
-# ---------- read-step failure ----------
-
-
 class TestReadStepFailure:
     def test_read_metadata_exception_routes_to_failed(self, session, monkeypatch):
         file_id, run_id = _seed_directory_file_run(session)
@@ -251,9 +240,6 @@ class TestReadStepFailure:
         # no metadata rows persisted on a step-1 failure
         rows = session.query(Metadata).filter(Metadata.file_id == file_id).all()
         assert rows == []
-
-
-# ---------- enrich-step failure ----------
 
 
 class TestEnrichStepFailure:
@@ -346,12 +332,8 @@ class TestEnrichStepFailure:
         assert file_record.status == FileStatus.failed
 
 
-# ---------- transition-level invariants ----------
-
-
 class TestStatusInvariants:
     def test_status_transitions_in_order(self, session, monkeypatch):
-        """Each phase advances status through the documented edges."""
         file_id, run_id = _seed_directory_file_run(session)
         monkeypatch.setenv("AI_PROVIDER", "dummy")
 
@@ -387,13 +369,8 @@ class TestStatusInvariants:
         assert session.get(FileRecord, file_id).status == FileStatus.enriched
 
 
-# ---------- signature ----------
-
-
 class TestSignature:
     def test_keyword_arguments_required(self, session, monkeypatch):
-        """All five params are part of the public contract; calling out-of-order
-        with kwargs (the documented usage) is supported."""
         file_id, run_id = _seed_directory_file_run(session)
         monkeypatch.setenv("AI_PROVIDER", "dummy")
 
