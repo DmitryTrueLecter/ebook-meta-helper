@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 from app.models.book import BookRecord
 from app.ai.contracts.schema_loader import (
@@ -7,6 +8,7 @@ from app.ai.contracts.schema_loader import (
     get_original_fields,
     get_prompt_label,
 )
+from app.ai.prompt.directory_summary import format_directory_hint_for_book_prompt
 
 def build_system_prompt() -> str:
     lines: list[str] = []
@@ -51,14 +53,18 @@ def get_response_format() -> str:
     with open(schema_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def build_book_metadata_prompt(record: BookRecord) -> str:
-    """
-    Build prompt for AI to enrich book metadata.
-    Output MUST be valid JSON according to book_metadata_v1 contract.
-    Uses schema from book_metadata.v1.json for field definitions.
-    """
+def build_book_metadata_prompt(
+    record: BookRecord,
+    directory_hint: Optional[dict] = None,
+) -> str:
+    """Build the per-file enrichment prompt; prepends a directory_hint context block when supplied."""
 
     lines: list[str] = []
+
+    hint_block = format_directory_hint_for_book_prompt(directory_hint)
+    if hint_block:
+        lines.append(hint_block)
+        lines.append("")
 
     lines.append("\nKnown file context:")
 
