@@ -1,1 +1,1 @@
-"""FastAPI routers grouped by resource (directories, files, scan)."""
+"""FastAPI route modules."""

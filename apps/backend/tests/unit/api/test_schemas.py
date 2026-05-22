@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.schemas import (
+    DirectoryDetail,
     DirectoryNode,
     EnrichmentTriggerResponse,
     FileDetail,
@@ -85,6 +86,36 @@ class TestFileListItem:
         )
         assert item.format is None
         assert item.sort_order is None
+
+    def test_extension_nullable(self):
+        item = FileListItem(
+            id=1, filename="README", extension=None, format=None,
+            status="pending", has_ai_suggestion=False, sort_order=None,
+        )
+        assert item.extension is None
+
+
+class TestDirectoryDetail:
+    def test_minimal_valid_payload_defaults_files_to_empty(self):
+        detail = DirectoryDetail(
+            id=1, name="lib", path="/lib", depth=0,
+            file_count=0, pending_count=0, enriched_count=0, accepted_count=0,
+        )
+        assert detail.files == []
+
+    def test_nested_files_are_file_list_items(self):
+        detail = DirectoryDetail(
+            id=1, name="lib", path="/lib", depth=0,
+            file_count=1, pending_count=1, enriched_count=0, accepted_count=0,
+            files=[{
+                "id": 10, "filename": "a.epub", "extension": "epub",
+                "format": "EPUB", "status": "pending",
+                "has_ai_suggestion": False, "sort_order": None,
+            }],
+        )
+        assert len(detail.files) == 1
+        assert isinstance(detail.files[0], FileListItem)
+        assert detail.files[0].filename == "a.epub"
 
 
 class TestMetadataSnapshot:

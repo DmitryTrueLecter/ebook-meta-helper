@@ -38,6 +38,22 @@ class FileListItem(BaseModel):
     sort_order: float | None
 
 
+class DirectoryDetail(BaseModel):
+    """Single directory with the contained file list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    path: str
+    depth: int
+    file_count: int
+    pending_count: int
+    enriched_count: int
+    accepted_count: int
+    files: list[FileListItem] = Field(default_factory=list)
+
+
 class PaginatedFiles(BaseModel):
     """Paginated file listing — `items` plus page metadata."""
 
