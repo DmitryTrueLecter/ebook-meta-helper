@@ -1,51 +1,58 @@
+"""DB-driven watcher loop: poll NEW_BOOKS_DIR, drive one scan cycle per interval."""
+
+from __future__ import annotations
+
 import os
 import time
-from typing import List
 
 from dotenv import load_dotenv
 
-from app.models.book import BookRecord
-from app.pipeline.process_file import process_file
-from app.scanner.directory_scanner import scan_directory
+from app.pipeline.scan_cycle import CycleResult, run_scan_cycle
+from db.session import get_session
+from db.repos import file_repo
 
 
 def run_watcher() -> None:
     load_dotenv()
 
-    new_books_dir = os.environ.get("NEW_BOOKS_DIR")
-    if not new_books_dir:
-        raise RuntimeError("NEW_BOOKS_DIR is not set")
-
+    new_books_dir = _require_env("NEW_BOOKS_DIR")
     sleep_seconds = int(os.environ.get("WATCH_SLEEP_SECONDS", "10"))
 
     print(f"[watcher] watching NEW_BOOKS_DIR: {new_books_dir}")
     print(f"[watcher] sleep when idle: {sleep_seconds}s")
 
+    reset_count = _reset_stalled_on_startup()
+    if reset_count:
+        print(f"[watcher] recovery: reset {reset_count} stalled file records to pending")
+
     while True:
         try:
-            records: List[BookRecord] = scan_directory(new_books_dir)
-        except Exception as e:
-            print(f"[watcher] scan error: {e}")
-            time.sleep(sleep_seconds)
-            continue
+            result = run_scan_cycle(new_books_dir)
+            _report_cycle(result)
+        except Exception as exc:
+            print(f"[watcher] scan cycle failed: {exc}")
+        time.sleep(sleep_seconds)
 
-        if not records:
-            time.sleep(sleep_seconds)
-            continue
 
-        for record in records:
-            try:
-                print(f"[watcher] processing: {record.path}")
-                result = process_file(record)
+def _reset_stalled_on_startup() -> int:
+    """Run the in-flight → pending reset in a single short session."""
+    with get_session() as session:
+        return file_repo.reset_stalled_to_pending(session)
 
-                if result.success:
-                    print(f"[watcher] OK: {record.path}")
-                else:
-                    print(f"[watcher] FAILED: {record.path}")
-                    for err in result.errors:
-                        print(f"  - {err}")
 
-            except Exception as e:
-                print(f"[watcher] unexpected error for {record.path}: {e}")
+def _report_cycle(result: CycleResult) -> None:
+    if result.files_discovered == 0:
+        return
+    print(
+        f"[watcher] scan_job={result.scan_job_id} "
+        f"discovered={result.files_discovered} "
+        f"processed={result.files_processed} "
+        f"failed={result.files_failed}"
+    )
 
-        time.sleep(1)
+
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set")
+    return value
