@@ -1,7 +1,7 @@
 import copy
 from typing import Optional
 
-import app.ai.providers  # triggers provider registration  # noqa: F401
+import app.ai.providers  # noqa: F401 - triggers provider registration
 from app.ai.registry import get
 from app.models.book import BookRecord
 
