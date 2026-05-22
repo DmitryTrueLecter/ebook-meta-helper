@@ -1,5 +1,6 @@
 """Tests for schema_loader functionality"""
 
+from app.ai.contracts import schema_loader
 from app.ai.contracts.schema_loader import (
     get_schema,
     get_edition_fields,
@@ -16,13 +17,17 @@ from app.ai.contracts.schema_loader import (
 
 
 def test_get_schema():
-    """Test that schema loads successfully"""
+    """Schema loads in v2 OpenAI json_schema format with edition/original/confidence sections."""
     schema = get_schema()
 
     assert schema is not None
-    assert "version" in schema
-    assert "fields" in schema
-    assert schema["version"] == "1.0"
+    assert "format" in schema
+    assert schema["format"]["type"] == "json_schema"
+    assert schema["format"]["name"] == "book_edition_info"
+    assert "schema" in schema["format"]
+    root = schema["format"]["schema"]
+    assert "properties" in root
+    assert {"edition", "original", "confidence"} <= set(root["properties"].keys())
 
 
 def test_get_edition_fields():
@@ -52,13 +57,14 @@ def test_get_original_fields():
 
 
 def test_get_confidence_field():
-    """Test getting confidence field definition"""
+    """Confidence field is a v2 number with minimum/maximum bounds."""
     field = get_confidence_field()
 
     assert isinstance(field, dict)
     assert "type" in field
     assert field["type"] == "number"
-    assert "range" in field
+    assert field["minimum"] == 0
+    assert field["maximum"] == 1
 
 
 def test_get_field_type():
@@ -70,31 +76,56 @@ def test_get_field_type():
     assert get_field_type(field_def) == "integer"
 
 
-def test_is_field_optional():
-    """Test checking if field is optional"""
-    field_def = {"type": "string", "optional": True}
-    assert is_field_optional(field_def) is True
+def test_is_field_optional(monkeypatch):
+    """Optionality is driven by the parent object's v2 'required' array, not a per-field key."""
+    fake_root = {
+        "properties": {
+            "edition": {
+                "properties": {
+                    "title": {"type": "string"},
+                    "subtitle": {"type": "string"},
+                },
+                "required": ["title"],
+            },
+            "original": {
+                "properties": {
+                    "title": {"type": "string"},
+                },
+                "required": ["title"],
+            },
+        }
+    }
+    monkeypatch.setattr(schema_loader, "_get_root_schema", lambda: fake_root)
 
-    field_def = {"type": "string", "optional": False}
-    assert is_field_optional(field_def) is False
-
-    # Default is True
-    field_def = {"type": "string"}
-    assert is_field_optional(field_def) is True
+    # Listed in parent's required -> not optional.
+    assert is_field_optional({"type": "string"}, "title", "edition") is False
+    # Absent from parent's required -> optional.
+    assert is_field_optional({"type": "string"}, "subtitle", "edition") is True
+    # Unknown parent section -> required list missing -> treated as optional.
+    assert is_field_optional({"type": "string"}, "title", "nonexistent") is True
+    # parent_key defaults to "edition".
+    assert is_field_optional({"type": "string"}, "title") is False
+    assert is_field_optional({"type": "string"}, "subtitle") is True
 
 
 def test_get_prompt_label():
-    """Test getting prompt label"""
-    field_def = {"type": "string", "prompt_label": "Title"}
-    assert get_prompt_label(field_def) == "Title"
+    """v2 derives the prompt label from the first sentence of 'description'."""
+    # Single-sentence description: used as-is (no trailing period).
+    field_def = {"type": "string", "description": "Title of the book"}
+    assert get_prompt_label(field_def) == "Title of the book"
 
+    # Multi-sentence description: only the first sentence.
+    field_def = {"type": "string", "description": "Title of the book. Long form allowed."}
+    assert get_prompt_label(field_def) == "Title of the book"
+
+    # No description -> empty.
     field_def = {"type": "string"}
     assert get_prompt_label(field_def) == ""
 
 
 def test_get_ai_hint():
-    """Test getting AI hint"""
-    field_def = {"type": "string", "ai_hint": "The book title"}
+    """v2 surfaces the field 'description' as the AI hint verbatim."""
+    field_def = {"type": "string", "description": "The book title"}
     assert get_ai_hint(field_def) == "The book title"
 
     field_def = {"type": "string"}
@@ -191,22 +222,18 @@ def test_schema_caching():
 
 
 def test_all_edition_fields_have_required_properties():
-    """Test that all edition fields have required properties"""
+    """Every v2 edition field declares 'type' and 'description'."""
     fields = get_edition_fields()
 
     for field_name, field_def in fields.items():
         assert "type" in field_def, f"{field_name} missing 'type'"
-        assert "optional" in field_def, f"{field_name} missing 'optional'"
-        assert "prompt_label" in field_def, f"{field_name} missing 'prompt_label'"
-        assert "ai_hint" in field_def, f"{field_name} missing 'ai_hint'"
+        assert "description" in field_def, f"{field_name} missing 'description'"
 
 
 def test_all_original_fields_have_required_properties():
-    """Test that all original fields have required properties"""
+    """Every v2 original-work field declares 'type' and 'description'."""
     fields = get_original_fields()
 
     for field_name, field_def in fields.items():
         assert "type" in field_def, f"{field_name} missing 'type'"
-        assert "optional" in field_def, f"{field_name} missing 'optional'"
-        assert "prompt_label" in field_def, f"{field_name} missing 'prompt_label'"
-        assert "ai_hint" in field_def, f"{field_name} missing 'ai_hint'"
+        assert "description" in field_def, f"{field_name} missing 'description'"
