@@ -9,14 +9,14 @@ import { RouterLink, RouterView } from 'vue-router'
         <span class="text-lg font-semibold">Ebook Meta Helper</span>
         <nav class="flex items-center gap-4 text-sm">
           <RouterLink
-            to="/directories"
+            :to="{ name: 'directories' }"
             class="text-muted-foreground hover:text-foreground"
             active-class="text-foreground font-medium"
           >
             Directories
           </RouterLink>
           <RouterLink
-            to="/scan"
+            :to="{ name: 'scan' }"
             class="text-muted-foreground hover:text-foreground"
             active-class="text-foreground font-medium"
           >

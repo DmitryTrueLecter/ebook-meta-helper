@@ -36,14 +36,14 @@ export interface DirectoryNode {
 export interface FileListItem {
   id: number
   filename: string
-  extension: string | null
+  extension: string
   format: string | null
   status: FileStatus
   has_ai_suggestion: boolean
   sort_order: number | null
 }
 
-// Mirrors apps/backend/app/api/schemas.py:DirectoryDetail.
+// Frontend-only composition: GET /api/directories/{id} has no backend Pydantic schema yet.
 export interface DirectoryDetail {
   id: number
   name: string

@@ -51,7 +51,7 @@ async function load(): Promise<void> {
 }
 
 function openFile(fileId: number): void {
-  void router.push(`/files/${fileId}`)
+  void router.push({ name: 'file-detail', params: { id: fileId } })
 }
 
 onMounted(load)
@@ -117,7 +117,7 @@ watch([directoryId, statusFilter], load)
           @click="openFile(file.id)"
         >
           <TableCell class="font-medium">{{ file.filename }}</TableCell>
-          <TableCell>{{ file.format ?? file.extension ?? '—' }}</TableCell>
+          <TableCell>{{ file.format ?? file.extension }}</TableCell>
           <TableCell><StatusBadge :status="file.status" /></TableCell>
           <TableCell class="text-right tabular-nums">
             {{ file.sort_order ?? '—' }}

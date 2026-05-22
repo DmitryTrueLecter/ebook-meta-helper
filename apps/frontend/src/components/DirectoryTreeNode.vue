@@ -23,7 +23,7 @@ function toggle(): void {
 }
 
 function openFiles(): void {
-  void router.push(`/directories/${props.node.id}/files`)
+  void router.push({ name: 'files', params: { id: props.node.id } })
 }
 
 async function startScan(): Promise<void> {
@@ -31,7 +31,7 @@ async function startScan(): Promise<void> {
   scanError.value = null
   try {
     await triggerDirectoryScan(props.node.id)
-    await router.push('/scan')
+    await router.push({ name: 'scan' })
   } catch (err) {
     scanError.value = err instanceof Error ? err.message : String(err)
   } finally {
