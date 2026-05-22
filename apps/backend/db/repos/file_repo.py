@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
 
 
@@ -116,3 +117,35 @@ def get_by_directory(
         stmt = stmt.where(FileRecord.status == status)
     stmt = stmt.order_by(FileRecord.sort_order.asc(), FileRecord.filename.asc())
     return list(session.execute(stmt).scalars())
+
+
+_STALLED_STATUSES = (FileStatus.reading, FileStatus.ai_queued, FileStatus.enriching)
+
+
+def reset_stalled_to_pending(session: Session) -> int:
+    """Crash recovery: move in-flight FileRecord rows back to pending (bypasses state machine)."""
+    result = session.execute(
+        update(FileRecord)
+        .where(FileRecord.status.in_(_STALLED_STATUSES))
+        .values(status=FileStatus.pending, error_message=None)
+    )
+    session.flush()
+    return result.rowcount or 0
+
+
+def list_directories_with_pending(session: Session) -> list[Directory]:
+    """Return distinct Directory rows that own at least one pending FileRecord."""
+    stmt = (
+        select(Directory)
+        .join(FileRecord, FileRecord.directory_id == Directory.id)
+        .where(FileRecord.status == FileStatus.pending)
+        .distinct()
+        .order_by(Directory.path.asc())
+    )
+    return list(session.execute(stmt).scalars())
+
+
+def count_by_status(session: Session, status: FileStatus) -> int:
+    """Return the total number of FileRecord rows in a given status."""
+    stmt = select(func.count()).select_from(FileRecord).where(FileRecord.status == status)
+    return int(session.execute(stmt).scalar_one())
