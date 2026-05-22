@@ -88,3 +88,21 @@ def get_history(session: Session, file_id: int) -> list[Metadata]:
             .order_by(Metadata.created_at.desc(), Metadata.id.desc())
         ).scalars()
     )
+
+
+def find_files_with_ai_suggestion(
+    session: Session, file_ids: list[int]
+) -> set[int]:
+    """Return the subset of file_ids that have a current AI metadata snapshot."""
+    if not file_ids:
+        return set()
+    rows = session.execute(
+        select(Metadata.file_id)
+        .where(
+            Metadata.file_id.in_(file_ids),
+            Metadata.source == MetadataSource.ai,
+            Metadata.is_current.is_(True),
+        )
+        .distinct()
+    ).scalars()
+    return set(rows)

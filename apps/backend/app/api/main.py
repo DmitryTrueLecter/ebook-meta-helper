@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.routes import directories as directories_routes
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -53,3 +55,6 @@ def list_books():
     """Placeholder: returns empty list until DB/repo is connected."""
     logger.info("Listing books (placeholder)")
     return {"items": [], "total": 0}
+
+
+app.include_router(directories_routes.router)
