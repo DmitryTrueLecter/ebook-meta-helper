@@ -1,3 +1,4 @@
+<!-- HAND-AUTHORED: shadcn-vue CLI unavailable; tracking DMI-66 -->
 <script setup lang="ts">
 import { type BadgeVariants, badgeVariants } from '.'
 import { cn } from '@/lib/utils'

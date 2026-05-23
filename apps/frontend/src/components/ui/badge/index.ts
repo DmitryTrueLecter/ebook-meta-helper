@@ -1,3 +1,4 @@
+// HAND-AUTHORED: shadcn-vue CLI unavailable; tracking DMI-66
 import { cva, type VariantProps } from 'class-variance-authority'
 
 export { default as Badge } from './Badge.vue'
