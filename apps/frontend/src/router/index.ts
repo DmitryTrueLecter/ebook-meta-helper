@@ -11,7 +11,12 @@ const router = createRouter({
     { path: '/', redirect: '/directories' },
     { path: '/directories', name: 'directories', component: DirectoriesPage },
     { path: '/directories/:id/files', name: 'files', component: FilesPage },
-    { path: '/files/:id', name: 'file-detail', component: FileDetailPage },
+    {
+      path: '/files/:id(\\d+)',
+      name: 'file-detail',
+      component: FileDetailPage,
+      props: true,
+    },
     { path: '/scan', name: 'scan', component: ScanPage },
   ],
 })
