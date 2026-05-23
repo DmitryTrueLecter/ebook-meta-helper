@@ -23,7 +23,7 @@ describe('router configuration', () => {
     expect(resolved.params.id).toBe('42')
   })
 
-  it('resolves /files/:id to the "file-detail" named route with params', () => {
+  it('resolves /files/:id to the "file-detail" named route with the id param', () => {
     const resolved = router.resolve('/files/7')
 
     expect(resolved.name).toBe('file-detail')
@@ -42,10 +42,10 @@ describe('router configuration', () => {
     expect(resolved.href).toBe('/directories/99/files')
   })
 
-  it('builds /files/:id from name+params', () => {
-    const resolved = router.resolve({ name: 'file-detail', params: { id: 5 } })
+  it('builds /files/:id from name+params (named navigation works)', () => {
+    const resolved = router.resolve({ name: 'file-detail', params: { id: 42 } })
 
-    expect(resolved.href).toBe('/files/5')
+    expect(resolved.href).toBe('/files/42')
   })
 
   it('builds /scan from named route', () => {
@@ -54,5 +54,12 @@ describe('router configuration', () => {
 
   it('builds /directories from named route', () => {
     expect(router.resolve({ name: 'directories' }).href).toBe('/directories')
+  })
+
+  it('rejects non-numeric ids (path regex \\d+ guards the route)', () => {
+    const resolved = router.resolve('/files/abc')
+
+    // Non-matching path resolves but without the named route.
+    expect(resolved.name).not.toBe('file-detail')
   })
 })

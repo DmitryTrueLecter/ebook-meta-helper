@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  acceptFile,
   apiFetch,
+  enrichFile,
   getDirectoryDetail,
+  getFileDetail,
+  getFileLogs,
   listDirectories,
+  rejectFile,
   triggerDirectoryScan,
 } from '@/services/api'
 
@@ -70,7 +75,7 @@ describe('apiFetch', () => {
     await expect(apiFetch('/x')).rejects.toThrow(/500.*database down/)
   })
 
-  it('falls back to statusText when error body is unparseable', async () => {
+  it('falls back to statusText when the error body is unparseable', async () => {
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(
       mockResponse({
@@ -219,5 +224,200 @@ describe('triggerDirectoryScan', () => {
     )
 
     await expect(triggerDirectoryScan(42)).rejects.toThrow(/scan worker offline/)
+  })
+})
+
+describe('getFileDetail', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/files/{id} and returns the payload', async () => {
+    const payload = {
+      id: 7,
+      directory_id: 1,
+      filename: 'book.epub',
+      extension: '.epub',
+      format: 'epub',
+      status: 'enriched',
+      sort_order: 1.0,
+      error_message: null,
+      file_metadata: null,
+      ai_metadata: null,
+    }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(payload) }),
+    )
+
+    const result = await getFileDetail(7)
+
+    expect(result).toEqual(payload)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/files/7',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    )
+  })
+
+  it('throws on 204 No Content (no silent null)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(getFileDetail(7)).rejects.toThrow(/empty response/)
+  })
+
+  it('propagates 500 errors with the backend detail', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'file table missing' }),
+      }),
+    )
+
+    await expect(getFileDetail(7)).rejects.toThrow(/file table missing/)
+  })
+})
+
+describe('getFileLogs', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/files/{id}/logs and returns the array', async () => {
+    const logs = [
+      { step: 'read', level: 'info', message: 'ok', duration_ms: 10, created_at: '2026-05-23T00:00:00Z' },
+    ]
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(logs) }),
+    )
+
+    const result = await getFileLogs(7)
+
+    expect(result).toEqual(logs)
+    expect(fetchMock).toHaveBeenCalledWith('/api/files/7/logs', expect.any(Object))
+  })
+
+  it('throws on 204 No Content', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(getFileLogs(7)).rejects.toThrow(/empty response/)
+  })
+})
+
+describe('acceptFile / rejectFile', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const cases = [
+    { name: 'acceptFile', fn: acceptFile, path: '/api/files/7/accept' },
+    { name: 'rejectFile', fn: rejectFile, path: '/api/files/7/reject' },
+  ] as const
+
+  it.each(cases)('$name POSTs to $path and returns the FileListItem payload', async ({ fn, path }) => {
+    const payload = {
+      id: 7,
+      filename: 'book.epub',
+      extension: '.epub',
+      format: 'epub',
+      status: 'accepted',
+      has_ai_suggestion: true,
+      sort_order: 1.0,
+    }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(payload) }),
+    )
+
+    const result = await fn(7)
+
+    expect(result).toEqual(payload)
+    const call = fetchMock.mock.calls[0]
+    expect(call?.[0]).toBe(path)
+    expect((call?.[1] as RequestInit | undefined)?.method).toBe('POST')
+  })
+
+  it.each(cases)('$name throws on 204 No Content', async ({ fn }) => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(fn(7)).rejects.toThrow(/empty response/)
+  })
+
+  it.each(cases)('$name propagates backend errors', async ({ fn }) => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'pipeline broken' }),
+      }),
+    )
+
+    await expect(fn(7)).rejects.toThrow(/pipeline broken/)
+  })
+})
+
+describe('enrichFile', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('POSTs to /api/files/{id}/enrich and returns the EnrichmentTriggerResponse', async () => {
+    const payload = { enrichment_run_id: 42, file_id: 7, status: 'ai_queued' }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 202, json: () => Promise.resolve(payload) }),
+    )
+
+    const result = await enrichFile(7)
+
+    expect(result).toEqual(payload)
+    const call = fetchMock.mock.calls[0]
+    expect(call?.[0]).toBe('/api/files/7/enrich')
+    expect((call?.[1] as RequestInit | undefined)?.method).toBe('POST')
+  })
+
+  it('throws on 204 No Content', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(enrichFile(7)).rejects.toThrow(/empty response/)
+  })
+
+  it('propagates backend errors', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'queue broken' }),
+      }),
+    )
+
+    await expect(enrichFile(7)).rejects.toThrow(/queue broken/)
   })
 })
