@@ -1,8 +1,12 @@
 import type {
+  DirectoryDetail,
+  DirectoryNode,
   EnrichmentTriggerResponse,
   FileDetail,
   FileListItem,
+  FileStatus,
   ProcessingLogEntry,
+  ScanJobStatus,
 } from '@/types'
 
 const API_BASE = '/api'
@@ -37,6 +41,39 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
 
   return (await response.json()) as T
+}
+
+// GET /api/directories — full tree, roots first.
+export async function listDirectories(): Promise<DirectoryNode[]> {
+  const tree = await apiFetch<DirectoryNode[]>('/directories')
+  if (tree === null) {
+    throw new Error('Directories listing returned an empty response')
+  }
+  return tree
+}
+
+// GET /api/directories/{id} — directory + its files. Optional status filter.
+export async function getDirectoryDetail(
+  id: number,
+  statusFilter?: FileStatus,
+): Promise<DirectoryDetail> {
+  const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : ''
+  const detail = await apiFetch<DirectoryDetail>(`/directories/${id}${query}`)
+  if (detail === null) {
+    throw new Error(`Directory ${id} returned an empty response`)
+  }
+  return detail
+}
+
+// POST /api/directories/{id}/scan — enqueue scan, returns 202 + scan-job status.
+export async function triggerDirectoryScan(id: number): Promise<ScanJobStatus> {
+  const job = await apiFetch<ScanJobStatus>(`/directories/${id}/scan`, {
+    method: 'POST',
+  })
+  if (job === null) {
+    throw new Error(`Scan trigger for directory ${id} returned an empty response`)
+  }
+  return job
 }
 
 // GET /api/files/{id} — single file with current `file_metadata` and `ai_metadata` snapshots.

@@ -6,40 +6,40 @@ import { FILE_STATUSES, type FileStatus } from '@/types'
 
 interface StatusExpectation {
   status: FileStatus
-  pulses: boolean
-  // Matches the shadcn Badge variant class fragment we expect to be present.
-  variantClass: string
+  classes: string[]
+  forbidden?: string[]
+  label: string
 }
 
 const expectations: StatusExpectation[] = [
-  { status: 'pending', pulses: false, variantClass: 'bg-secondary' },
-  { status: 'reading', pulses: true, variantClass: 'bg-secondary' },
-  { status: 'ai_queued', pulses: true, variantClass: 'bg-secondary' },
-  { status: 'enriching', pulses: true, variantClass: 'bg-secondary' },
-  { status: 'enriched', pulses: false, variantClass: 'bg-primary' },
-  { status: 'accepted', pulses: false, variantClass: 'bg-primary' },
-  { status: 'rejected', pulses: false, variantClass: 'bg-destructive' },
-  { status: 'failed', pulses: false, variantClass: 'bg-destructive' },
+  { status: 'pending', classes: ['bg-gray-200', 'text-gray-800'], forbidden: ['animate-pulse', 'line-through'], label: 'pending' },
+  { status: 'reading', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'reading' },
+  { status: 'ai_queued', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'AI queued' },
+  { status: 'enriching', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'enriching' },
+  { status: 'enriched', classes: ['bg-yellow-100', 'text-yellow-800'], forbidden: ['animate-pulse', 'line-through'], label: 'enriched' },
+  { status: 'accepted', classes: ['bg-green-100', 'text-green-800'], forbidden: ['line-through'], label: 'accepted' },
+  { status: 'rejected', classes: ['bg-gray-200', 'text-gray-600', 'line-through'], label: 'rejected' },
+  { status: 'failed', classes: ['bg-red-100', 'text-red-800'], forbidden: ['animate-pulse'], label: 'failed' },
 ]
 
 describe('StatusBadge', () => {
   it.each(expectations)(
-    'renders $status with the correct variant and pulse state',
-    ({ status, pulses, variantClass }) => {
+    'renders $status with the correct colour classes and label',
+    ({ status, classes, forbidden, label }) => {
       const wrapper = mount(StatusBadge, { props: { status } })
 
-      const html = wrapper.html()
-      expect(html).toContain(variantClass)
-      if (pulses) {
-        expect(html).toContain('animate-pulse')
-      } else {
-        expect(html).not.toContain('animate-pulse')
+      const rendered = wrapper.html()
+      for (const cls of classes) {
+        expect(rendered).toContain(cls)
       }
-      expect(wrapper.text()).toBe(status)
+      for (const cls of forbidden ?? []) {
+        expect(rendered).not.toContain(cls)
+      }
+      expect(wrapper.text()).toBe(label)
     },
   )
 
-  it('covers every FileStatus value (no status falls through to undefined variant)', () => {
+  it('covers every FileStatus value (no status falls through to "undefined" classes)', () => {
     const covered = new Set(expectations.map((e) => e.status))
     for (const status of FILE_STATUSES) {
       expect(covered.has(status)).toBe(true)

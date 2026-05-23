@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-
 import { Badge } from '@/components/ui/badge'
-import type { BadgeVariants } from '@/components/ui/badge'
 import type { FileStatus } from '@/types'
 
 interface Props {
@@ -11,26 +9,33 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const STATUS_VARIANT: Record<FileStatus, BadgeVariants['variant']> = {
-  pending: 'secondary',
-  reading: 'secondary',
-  ai_queued: 'secondary',
-  enriching: 'secondary',
-  enriched: 'default',
-  accepted: 'default',
-  rejected: 'destructive',
-  failed: 'destructive',
+// ai_queued has no explicit color in the spec — grouped with reading/enriching as in-flight.
+const STATUS_STYLES: Record<FileStatus, string> = {
+  pending: 'bg-gray-200 text-gray-800 border-transparent',
+  reading: 'bg-blue-100 text-blue-800 border-transparent animate-pulse',
+  ai_queued: 'bg-blue-100 text-blue-800 border-transparent animate-pulse',
+  enriching: 'bg-blue-100 text-blue-800 border-transparent animate-pulse',
+  enriched: 'bg-yellow-100 text-yellow-800 border-transparent',
+  accepted: 'bg-green-100 text-green-800 border-transparent',
+  rejected: 'bg-gray-200 text-gray-600 border-transparent line-through',
+  failed: 'bg-red-100 text-red-800 border-transparent',
 }
 
-// In-flight states pulse to signal background activity.
-const PULSING_STATUSES: ReadonlySet<FileStatus> = new Set(['reading', 'ai_queued', 'enriching'])
+const STATUS_LABELS: Record<FileStatus, string> = {
+  pending: 'pending',
+  reading: 'reading',
+  ai_queued: 'AI queued',
+  enriching: 'enriching',
+  enriched: 'enriched',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  failed: 'failed',
+}
 
-const variant = computed(() => STATUS_VARIANT[props.status])
-const isPulsing = computed(() => PULSING_STATUSES.has(props.status))
+const badgeClass = computed(() => STATUS_STYLES[props.status])
+const label = computed(() => STATUS_LABELS[props.status])
 </script>
 
 <template>
-  <Badge :variant="variant" :class="isPulsing ? 'animate-pulse' : ''">
-    {{ status }}
-  </Badge>
+  <Badge variant="outline" :class="badgeClass">{{ label }}</Badge>
 </template>
