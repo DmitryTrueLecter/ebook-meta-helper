@@ -227,6 +227,7 @@ onUnmounted(() => {
           aria-valuemin="0"
           aria-valuemax="100"
         >
+          <!-- Inline style required: Tailwind compiles class names at build time, so a 0–100 runtime width cannot be expressed as a utility class. -->
           <div
             class="h-full bg-primary transition-all"
             :style="{ width: `${progressPercent}%` }"
