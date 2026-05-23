@@ -1,4 +1,5 @@
-// TypeScript interfaces mirroring backend Pydantic schemas.
+// TypeScript interfaces mirroring backend Pydantic schemas
+// (apps/backend/app/api/schemas.py).
 
 export interface ApiError {
   detail: string
@@ -45,13 +46,36 @@ export interface MetadataSnapshot {
   created_at: string
 }
 
-// GET /api/files/{id}/metadata — current snapshots per source; any source may be null when not yet produced.
-export interface FileMetadataResponse {
+// GET /api/files/{id} — single file with current file/ai metadata snapshots.
+export interface FileDetail {
+  id: number
+  directory_id: number
+  filename: string
+  extension: string | null
+  format: string | null
+  status: FileStatus
+  sort_order: number | null
+  error_message: string | null
+  file_metadata: MetadataSnapshot | null
+  ai_metadata: MetadataSnapshot | null
+}
+
+// Backend FileListItem — returned by file listings and accept/reject endpoints.
+export interface FileListItem {
+  id: number
+  filename: string
+  extension: string | null
+  format: string | null
+  status: FileStatus
+  has_ai_suggestion: boolean
+  sort_order: number | null
+}
+
+// 202 response from POST /api/files/{id}/enrich.
+export interface EnrichmentTriggerResponse {
+  enrichment_run_id: number
   file_id: number
   status: FileStatus
-  file: MetadataSnapshot | null
-  ai: MetadataSnapshot | null
-  accepted: MetadataSnapshot | null
 }
 
 // Mirrors apps/backend/app/api/schemas.py:ProcessingLogEntry.

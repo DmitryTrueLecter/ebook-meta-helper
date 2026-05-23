@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { DiffRow } from '@/composables/useMetadataDiff'
 
@@ -17,8 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
   emptyMessage: '',
 })
 
-// Tailwind highlight classes applied only on the AI side. The file side renders
-// neutrally — diff visual cue is one-sided per the issue's Layout section.
+// Highlight cue is one-sided per the issue's Layout section — file side renders neutrally.
 const HIGHLIGHT_CLASS: Record<DiffRow['highlight'], string> = {
   none: '',
   changed: 'bg-yellow-100 dark:bg-yellow-900/30',
@@ -35,8 +32,6 @@ function classFor(row: DiffRow): string {
 function valueFor(row: DiffRow): string {
   return props.side === 'file' ? row.fileValue : row.aiValue
 }
-
-const visibleRows = computed(() => props.rows)
 </script>
 
 <template>
@@ -48,7 +43,7 @@ const visibleRows = computed(() => props.rows)
       <p v-if="isEmpty" class="text-sm text-muted-foreground">{{ emptyMessage }}</p>
       <dl v-else class="space-y-2">
         <div
-          v-for="row in visibleRows"
+          v-for="row in rows"
           :key="row.key"
           :class="['rounded-md px-2 py-1', classFor(row)]"
         >

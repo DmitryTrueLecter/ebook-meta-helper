@@ -4,8 +4,8 @@ import {
   acceptFile,
   apiFetch,
   enrichFile,
+  getFileDetail,
   getFileLogs,
-  getFileMetadata,
   rejectFile,
 } from '@/services/api'
 
@@ -99,7 +99,7 @@ describe('apiFetch', () => {
   })
 })
 
-describe('getFileMetadata', () => {
+describe('getFileDetail', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
   })
@@ -108,18 +108,29 @@ describe('getFileMetadata', () => {
     vi.unstubAllGlobals()
   })
 
-  it('GETs /api/files/{id}/metadata and returns the payload', async () => {
-    const payload = { file_id: 7, status: 'enriched', file: null, ai: null, accepted: null }
+  it('GETs /api/files/{id} and returns the payload', async () => {
+    const payload = {
+      id: 7,
+      directory_id: 1,
+      filename: 'book.epub',
+      extension: '.epub',
+      format: 'epub',
+      status: 'enriched',
+      sort_order: 1.0,
+      error_message: null,
+      file_metadata: null,
+      ai_metadata: null,
+    }
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(
       mockResponse({ status: 200, json: () => Promise.resolve(payload) }),
     )
 
-    const result = await getFileMetadata(7)
+    const result = await getFileDetail(7)
 
     expect(result).toEqual(payload)
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/files/7/metadata',
+      '/api/files/7',
       expect.objectContaining({ headers: expect.any(Object) }),
     )
   })
@@ -128,7 +139,7 @@ describe('getFileMetadata', () => {
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
 
-    await expect(getFileMetadata(7)).rejects.toThrow(/empty response/)
+    await expect(getFileDetail(7)).rejects.toThrow(/empty response/)
   })
 
   it('propagates 500 errors with the backend detail', async () => {
@@ -138,11 +149,11 @@ describe('getFileMetadata', () => {
         status: 500,
         statusText: 'Internal Server Error',
         ok: false,
-        json: () => Promise.resolve({ detail: 'metadata table missing' }),
+        json: () => Promise.resolve({ detail: 'file table missing' }),
       }),
     )
 
-    await expect(getFileMetadata(7)).rejects.toThrow(/metadata table missing/)
+    await expect(getFileDetail(7)).rejects.toThrow(/file table missing/)
   })
 })
 
@@ -178,7 +189,7 @@ describe('getFileLogs', () => {
   })
 })
 
-describe('acceptFile / rejectFile / enrichFile', () => {
+describe('acceptFile / rejectFile', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
   })
@@ -190,11 +201,18 @@ describe('acceptFile / rejectFile / enrichFile', () => {
   const cases = [
     { name: 'acceptFile', fn: acceptFile, path: '/api/files/7/accept' },
     { name: 'rejectFile', fn: rejectFile, path: '/api/files/7/reject' },
-    { name: 'enrichFile', fn: enrichFile, path: '/api/files/7/enrich' },
   ] as const
 
-  it.each(cases)('$name POSTs to $path and returns the file payload', async ({ fn, path }) => {
-    const payload = { file_id: 7, status: 'accepted', file: null, ai: null, accepted: null }
+  it.each(cases)('$name POSTs to $path and returns the FileListItem payload', async ({ fn, path }) => {
+    const payload = {
+      id: 7,
+      filename: 'book.epub',
+      extension: '.epub',
+      format: 'epub',
+      status: 'accepted',
+      has_ai_suggestion: true,
+      sort_order: 1.0,
+    }
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(
       mockResponse({ status: 200, json: () => Promise.resolve(payload) }),
@@ -227,5 +245,51 @@ describe('acceptFile / rejectFile / enrichFile', () => {
     )
 
     await expect(fn(7)).rejects.toThrow(/pipeline broken/)
+  })
+})
+
+describe('enrichFile', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('POSTs to /api/files/{id}/enrich and returns the EnrichmentTriggerResponse', async () => {
+    const payload = { enrichment_run_id: 42, file_id: 7, status: 'ai_queued' }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 202, json: () => Promise.resolve(payload) }),
+    )
+
+    const result = await enrichFile(7)
+
+    expect(result).toEqual(payload)
+    const call = fetchMock.mock.calls[0]
+    expect(call?.[0]).toBe('/api/files/7/enrich')
+    expect((call?.[1] as RequestInit | undefined)?.method).toBe('POST')
+  })
+
+  it('throws on 204 No Content', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(enrichFile(7)).rejects.toThrow(/empty response/)
+  })
+
+  it('propagates backend errors', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'queue broken' }),
+      }),
+    )
+
+    await expect(enrichFile(7)).rejects.toThrow(/queue broken/)
   })
 })

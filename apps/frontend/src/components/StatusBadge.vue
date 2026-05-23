@@ -11,7 +11,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// Stable status → badge variant mapping. Statuses not listed fall back to `outline`.
 const STATUS_VARIANT: Record<FileStatus, BadgeVariants['variant']> = {
   pending: 'secondary',
   reading: 'secondary',
@@ -23,8 +22,8 @@ const STATUS_VARIANT: Record<FileStatus, BadgeVariants['variant']> = {
   failed: 'destructive',
 }
 
-// `enriching` and `ai_queued` are in-flight states — pulse to signal activity.
-const PULSING_STATUSES: ReadonlySet<FileStatus> = new Set(['ai_queued', 'enriching', 'reading'])
+// In-flight states pulse to signal background activity.
+const PULSING_STATUSES: ReadonlySet<FileStatus> = new Set(['reading', 'ai_queued', 'enriching'])
 
 const variant = computed(() => STATUS_VARIANT[props.status])
 const isPulsing = computed(() => PULSING_STATUSES.has(props.status))

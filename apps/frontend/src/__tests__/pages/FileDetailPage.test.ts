@@ -4,7 +4,14 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
 import FileDetailPage from '@/pages/FileDetailPage.vue'
 import * as api from '@/services/api'
-import type { FileMetadataResponse, MetadataSnapshot, ProcessingLogEntry } from '@/types'
+import type {
+  EnrichmentTriggerResponse,
+  FileDetail,
+  FileListItem,
+  FileStatus,
+  MetadataSnapshot,
+  ProcessingLogEntry,
+} from '@/types'
 
 function fileSnapshot(overrides: Partial<MetadataSnapshot> = {}): MetadataSnapshot {
   return {
@@ -42,15 +49,37 @@ function aiSnapshot(overrides: Partial<MetadataSnapshot> = {}): MetadataSnapshot
   }
 }
 
-function metadataResponse(overrides: Partial<FileMetadataResponse> = {}): FileMetadataResponse {
+function fileDetail(overrides: Partial<FileDetail> = {}): FileDetail {
   return {
-    file_id: 7,
+    id: 7,
+    directory_id: 1,
+    filename: 'book.epub',
+    extension: '.epub',
+    format: 'epub',
     status: 'enriched',
-    file: fileSnapshot(),
-    ai: aiSnapshot(),
-    accepted: null,
+    sort_order: 1.0,
+    error_message: null,
+    file_metadata: fileSnapshot(),
+    ai_metadata: aiSnapshot(),
     ...overrides,
   }
+}
+
+function fileListItem(status: FileStatus, overrides: Partial<FileListItem> = {}): FileListItem {
+  return {
+    id: 7,
+    filename: 'book.epub',
+    extension: '.epub',
+    format: 'epub',
+    status,
+    has_ai_suggestion: true,
+    sort_order: 1.0,
+    ...overrides,
+  }
+}
+
+function enrichResponse(status: FileStatus = 'ai_queued'): EnrichmentTriggerResponse {
+  return { enrichment_run_id: 42, file_id: 7, status }
 }
 
 function logEntry(overrides: Partial<ProcessingLogEntry> = {}): ProcessingLogEntry {
@@ -91,8 +120,8 @@ describe('FileDetailPage — data fetching', () => {
     vi.restoreAllMocks()
   })
 
-  it('calls getFileMetadata with the route id on mount', async () => {
-    const spy = vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+  it('calls getFileDetail with the route id on mount', async () => {
+    const spy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
 
     await mountAt(testRouter, '/files/7')
     await flushPromises()
@@ -101,12 +130,12 @@ describe('FileDetailPage — data fetching', () => {
     expect(spy).toHaveBeenCalledWith(7)
   })
 
-  it('shows the loading message while the metadata fetch is in flight', async () => {
-    let resolveMetadata: ((value: FileMetadataResponse) => void) | null = null
-    vi.spyOn(api, 'getFileMetadata').mockImplementation(
+  it('shows the loading message while the detail fetch is in flight', async () => {
+    let resolveDetail: ((value: FileDetail) => void) | null = null
+    vi.spyOn(api, 'getFileDetail').mockImplementation(
       () =>
         new Promise((resolve) => {
-          resolveMetadata = resolve
+          resolveDetail = resolve
         }),
     )
 
@@ -114,14 +143,14 @@ describe('FileDetailPage — data fetching', () => {
 
     expect(wrapper.text()).toContain('Loading metadata')
 
-    resolveMetadata!(metadataResponse())
+    resolveDetail!(fileDetail())
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('Loading metadata')
   })
 
-  it('renders both diff panels when metadata loads with file + ai snapshots', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+  it('renders both diff panels when detail loads with file + ai snapshots', async () => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
 
     const wrapper = await mountAt(testRouter, '/files/7')
     await flushPromises()
@@ -132,9 +161,9 @@ describe('FileDetailPage — data fetching', () => {
     expect(wrapper.text()).toContain('New Title')
   })
 
-  it('shows the empty placeholder on the AI panel when ai is null', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(
-      metadataResponse({ ai: null, status: 'pending' }),
+  it('shows the empty placeholder on the AI panel when ai_metadata is null', async () => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({ ai_metadata: null, status: 'pending' }),
     )
 
     const wrapper = await mountAt(testRouter, '/files/7')
@@ -143,9 +172,9 @@ describe('FileDetailPage — data fetching', () => {
     expect(wrapper.text()).toContain('AI has not produced a suggestion yet')
   })
 
-  it('shows the empty placeholder on the file panel when file is null', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(
-      metadataResponse({ file: null, status: 'pending' }),
+  it('shows the empty placeholder on the file panel when file_metadata is null', async () => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({ file_metadata: null, status: 'pending' }),
     )
 
     const wrapper = await mountAt(testRouter, '/files/7')
@@ -154,8 +183,8 @@ describe('FileDetailPage — data fetching', () => {
     expect(wrapper.text()).toContain('No metadata read from file yet')
   })
 
-  it('shows an error message when getFileMetadata rejects', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockRejectedValue(new Error('500 Internal Server Error'))
+  it('shows an error message when getFileDetail rejects', async () => {
+    vi.spyOn(api, 'getFileDetail').mockRejectedValue(new Error('500 Internal Server Error'))
 
     const wrapper = await mountAt(testRouter, '/files/7')
     await flushPromises()
@@ -164,7 +193,7 @@ describe('FileDetailPage — data fetching', () => {
   })
 
   it('rejects an invalid (non-numeric) id by showing the invalid-id message', async () => {
-    const spy = vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+    const spy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
 
     await testRouter.push('/files/abc')
     await testRouter.isReady()
@@ -188,10 +217,10 @@ describe('FileDetailPage — diff highlighting visible in the rendered DOM', () 
   })
 
   it('applies yellow highlight when AI changes a field', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(
-      metadataResponse({
-        file: fileSnapshot({ title: 'Old' }),
-        ai: aiSnapshot({ title: 'New' }),
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({
+        file_metadata: fileSnapshot({ title: 'Old' }),
+        ai_metadata: aiSnapshot({ title: 'New' }),
       }),
     )
 
@@ -202,10 +231,10 @@ describe('FileDetailPage — diff highlighting visible in the rendered DOM', () 
   })
 
   it('applies green highlight when AI introduces a new field that was empty in the file', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(
-      metadataResponse({
-        file: fileSnapshot({ series: null }),
-        ai: aiSnapshot({ series: 'Foundation' }),
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({
+        file_metadata: fileSnapshot({ series: null }),
+        ai_metadata: aiSnapshot({ series: 'Foundation' }),
       }),
     )
 
@@ -228,13 +257,14 @@ describe('FileDetailPage — actions', () => {
   })
 
   it('Accept calls acceptFile with the route id and updates the status badge from the response', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
-    const acceptSpy = vi
-      .spyOn(api, 'acceptFile')
-      .mockResolvedValue(metadataResponse({ status: 'accepted' }))
+    const detailSpy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
+    const acceptSpy = vi.spyOn(api, 'acceptFile').mockResolvedValue(fileListItem('accepted'))
 
     const wrapper = await mountAt(testRouter, '/files/7')
     await flushPromises()
+
+    // Second call (post-action re-fetch) returns the post-accept detail.
+    detailSpy.mockResolvedValueOnce(fileDetail({ status: 'accepted' }))
 
     const buttons = wrapper.findAll('button')
     const acceptBtn = buttons.find((b) => b.text().includes('Accept'))
@@ -248,13 +278,13 @@ describe('FileDetailPage — actions', () => {
   })
 
   it('Reject calls rejectFile and shows the reject toast', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
-    const rejectSpy = vi
-      .spyOn(api, 'rejectFile')
-      .mockResolvedValue(metadataResponse({ status: 'rejected' }))
+    const detailSpy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
+    const rejectSpy = vi.spyOn(api, 'rejectFile').mockResolvedValue(fileListItem('rejected'))
 
     const wrapper = await mountAt(testRouter, '/files/7')
     await flushPromises()
+
+    detailSpy.mockResolvedValueOnce(fileDetail({ status: 'rejected' }))
 
     const rejectBtn = wrapper.findAll('button').find((b) => b.text().includes('Reject'))
     await rejectBtn!.trigger('click')
@@ -265,13 +295,13 @@ describe('FileDetailPage — actions', () => {
   })
 
   it('Re-run AI calls enrichFile and shows the queued toast', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
-    const enrichSpy = vi
-      .spyOn(api, 'enrichFile')
-      .mockResolvedValue(metadataResponse({ status: 'ai_queued' }))
+    const detailSpy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
+    const enrichSpy = vi.spyOn(api, 'enrichFile').mockResolvedValue(enrichResponse('ai_queued'))
 
     const wrapper = await mountAt(testRouter, '/files/7')
     await flushPromises()
+
+    detailSpy.mockResolvedValueOnce(fileDetail({ status: 'ai_queued' }))
 
     const enrichBtn = wrapper.findAll('button').find((b) => b.text().includes('Re-run AI'))
     await enrichBtn!.trigger('click')
@@ -281,8 +311,24 @@ describe('FileDetailPage — actions', () => {
     expect(wrapper.text()).toContain('Re-running AI enrichment')
   })
 
+  it('re-fetches the file detail after a successful action to pick up new snapshots', async () => {
+    const detailSpy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
+    vi.spyOn(api, 'acceptFile').mockResolvedValue(fileListItem('accepted'))
+
+    const wrapper = await mountAt(testRouter, '/files/7')
+    await flushPromises()
+    expect(detailSpy).toHaveBeenCalledTimes(1)
+
+    detailSpy.mockResolvedValueOnce(fileDetail({ status: 'accepted' }))
+    const acceptBtn = wrapper.findAll('button').find((b) => b.text().includes('Accept'))
+    await acceptBtn!.trigger('click')
+    await flushPromises()
+
+    expect(detailSpy).toHaveBeenCalledTimes(2)
+  })
+
   it('shows the error toast when an action rejects (does not crash)', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
     vi.spyOn(api, 'acceptFile').mockRejectedValue(new Error('500 backend down'))
 
     const wrapper = await mountAt(testRouter, '/files/7')
@@ -296,7 +342,7 @@ describe('FileDetailPage — actions', () => {
   })
 
   it('disables Accept and Reject when the status is already accepted (terminal)', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse({ status: 'accepted' }))
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status: 'accepted' }))
 
     const wrapper = await mountAt(testRouter, '/files/7')
     await flushPromises()
@@ -312,8 +358,8 @@ describe('FileDetailPage — actions', () => {
   })
 
   it('disables Accept and Reject when there is no AI snapshot yet', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(
-      metadataResponse({ ai: null, status: 'pending' }),
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({ ai_metadata: null, status: 'pending' }),
     )
 
     const wrapper = await mountAt(testRouter, '/files/7')
@@ -339,7 +385,7 @@ describe('FileDetailPage — processing log', () => {
   })
 
   it('does not fetch logs until the section is expanded', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
     const logsSpy = vi.spyOn(api, 'getFileLogs').mockResolvedValue([])
 
     await mountAt(testRouter, '/files/7')
@@ -349,7 +395,7 @@ describe('FileDetailPage — processing log', () => {
   })
 
   it('fetches logs the first time the section is expanded', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
     const logsSpy = vi.spyOn(api, 'getFileLogs').mockResolvedValue([logEntry()])
 
     const wrapper = await mountAt(testRouter, '/files/7')
@@ -364,7 +410,7 @@ describe('FileDetailPage — processing log', () => {
   })
 
   it('shows the empty-log message when the backend returns no entries', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
     vi.spyOn(api, 'getFileLogs').mockResolvedValue([])
 
     const wrapper = await mountAt(testRouter, '/files/7')
@@ -378,7 +424,7 @@ describe('FileDetailPage — processing log', () => {
   })
 
   it('shows an error message when the log fetch fails', async () => {
-    vi.spyOn(api, 'getFileMetadata').mockResolvedValue(metadataResponse())
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail())
     vi.spyOn(api, 'getFileLogs').mockRejectedValue(new Error('500 logs unavailable'))
 
     const wrapper = await mountAt(testRouter, '/files/7')

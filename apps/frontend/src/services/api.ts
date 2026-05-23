@@ -1,4 +1,9 @@
-import type { FileMetadataResponse, ProcessingLogEntry } from '@/types'
+import type {
+  EnrichmentTriggerResponse,
+  FileDetail,
+  FileListItem,
+  ProcessingLogEntry,
+} from '@/types'
 
 const API_BASE = '/api'
 
@@ -34,16 +39,16 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   return (await response.json()) as T
 }
 
-// GET /api/files/{id}/metadata — current snapshots (file / ai / accepted) for one file.
-export async function getFileMetadata(id: number): Promise<FileMetadataResponse> {
-  const metadata = await apiFetch<FileMetadataResponse>(`/files/${id}/metadata`)
-  if (metadata === null) {
-    throw new Error(`File ${id} metadata returned an empty response`)
+// GET /api/files/{id} — single file with current `file_metadata` and `ai_metadata` snapshots.
+export async function getFileDetail(id: number): Promise<FileDetail> {
+  const detail = await apiFetch<FileDetail>(`/files/${id}`)
+  if (detail === null) {
+    throw new Error(`File ${id} detail returned an empty response`)
   }
-  return metadata
+  return detail
 }
 
-// GET /api/files/{id}/logs — full processing history, oldest first.
+// GET /api/files/{id}/logs — last N processing-log entries for the file, newest first.
 export async function getFileLogs(id: number): Promise<ProcessingLogEntry[]> {
   const logs = await apiFetch<ProcessingLogEntry[]>(`/files/${id}/logs`)
   if (logs === null) {
@@ -52,27 +57,29 @@ export async function getFileLogs(id: number): Promise<ProcessingLogEntry[]> {
   return logs
 }
 
-// POST /api/files/{id}/accept — persist current AI snapshot as the accepted revision.
-export async function acceptFile(id: number): Promise<FileMetadataResponse> {
-  const result = await apiFetch<FileMetadataResponse>(`/files/${id}/accept`, { method: 'POST' })
+// POST /api/files/{id}/accept — apply the AI suggestion; returns the updated FileListItem.
+export async function acceptFile(id: number): Promise<FileListItem> {
+  const result = await apiFetch<FileListItem>(`/files/${id}/accept`, { method: 'POST' })
   if (result === null) {
     throw new Error(`Accept on file ${id} returned an empty response`)
   }
   return result
 }
 
-// POST /api/files/{id}/reject — mark the AI snapshot as rejected; status becomes `rejected`.
-export async function rejectFile(id: number): Promise<FileMetadataResponse> {
-  const result = await apiFetch<FileMetadataResponse>(`/files/${id}/reject`, { method: 'POST' })
+// POST /api/files/{id}/reject — mark the file as rejected; returns the updated FileListItem.
+export async function rejectFile(id: number): Promise<FileListItem> {
+  const result = await apiFetch<FileListItem>(`/files/${id}/reject`, { method: 'POST' })
   if (result === null) {
     throw new Error(`Reject on file ${id} returned an empty response`)
   }
   return result
 }
 
-// POST /api/files/{id}/enrich — re-queue AI enrichment; status flips to `ai_queued`.
-export async function enrichFile(id: number): Promise<FileMetadataResponse> {
-  const result = await apiFetch<FileMetadataResponse>(`/files/${id}/enrich`, { method: 'POST' })
+// POST /api/files/{id}/enrich — queue re-enrichment; returns the EnrichmentTriggerResponse (202).
+export async function enrichFile(id: number): Promise<EnrichmentTriggerResponse> {
+  const result = await apiFetch<EnrichmentTriggerResponse>(`/files/${id}/enrich`, {
+    method: 'POST',
+  })
   if (result === null) {
     throw new Error(`Enrich on file ${id} returned an empty response`)
   }

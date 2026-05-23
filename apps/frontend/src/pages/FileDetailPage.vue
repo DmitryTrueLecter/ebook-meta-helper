@@ -10,11 +10,11 @@ import { buildDiffRows } from '@/composables/useMetadataDiff'
 import {
   acceptFile,
   enrichFile,
+  getFileDetail,
   getFileLogs,
-  getFileMetadata,
   rejectFile,
 } from '@/services/api'
-import type { FileMetadataResponse, ProcessingLogEntry } from '@/types'
+import type { FileDetail, FileStatus, ProcessingLogEntry } from '@/types'
 
 type ToastTone = 'success' | 'info' | 'error'
 
@@ -29,25 +29,31 @@ const rawId = Array.isArray(route.params.id) ? route.params.id[0] : route.params
 const fileId = Number.parseInt(rawId ?? '', 10)
 const fileIdValid = Number.isFinite(fileId) && fileId > 0
 
-const metadata = ref<FileMetadataResponse | null>(null)
+const detail = ref<FileDetail | null>(null)
 const logs = ref<ProcessingLogEntry[]>([])
-const loadingMetadata = ref(false)
+const loadingDetail = ref(false)
 const loadingLogs = ref(false)
-const metadataError = ref<string | null>(null)
+const detailError = ref<string | null>(null)
 const logsError = ref<string | null>(null)
 const actionInFlight = ref<'accept' | 'reject' | 'enrich' | null>(null)
 const showLogs = ref(false)
 const toast = ref<Toast | null>(null)
 
-const diffRows = computed(() => buildDiffRows(metadata.value?.file ?? null, metadata.value?.ai ?? null))
-const hasAi = computed(() => metadata.value?.ai !== null && metadata.value?.ai !== undefined)
-const hasFile = computed(() => metadata.value?.file !== null && metadata.value?.file !== undefined)
-const status = computed(() => metadata.value?.status ?? null)
+const diffRows = computed(() =>
+  buildDiffRows(detail.value?.file_metadata ?? null, detail.value?.ai_metadata ?? null),
+)
+const hasAi = computed(
+  () => detail.value?.ai_metadata !== null && detail.value?.ai_metadata !== undefined,
+)
+const hasFile = computed(
+  () => detail.value?.file_metadata !== null && detail.value?.file_metadata !== undefined,
+)
+const status = computed(() => detail.value?.status ?? null)
 
 // Terminal statuses disable Accept/Reject — re-running AI is always allowed.
-const TERMINAL_STATUSES = new Set(['accepted', 'rejected'])
+const TERMINAL_STATUSES = new Set<FileStatus>(['accepted', 'rejected'])
 const decisionDisabled = computed(() => {
-  if (!metadata.value) {
+  if (!detail.value) {
     return true
   }
   if (!hasAi.value) {
@@ -56,11 +62,11 @@ const decisionDisabled = computed(() => {
   if (actionInFlight.value !== null) {
     return true
   }
-  return TERMINAL_STATUSES.has(metadata.value.status)
+  return TERMINAL_STATUSES.has(detail.value.status)
 })
 
 const enrichDisabled = computed(() => {
-  if (!metadata.value) {
+  if (!detail.value) {
     return true
   }
   return actionInFlight.value !== null
@@ -75,18 +81,18 @@ function flashToast(tone: ToastTone, message: string): void {
   }, 4000)
 }
 
-async function loadMetadata(): Promise<void> {
+async function loadDetail(): Promise<void> {
   if (!fileIdValid) {
     return
   }
-  loadingMetadata.value = true
-  metadataError.value = null
+  loadingDetail.value = true
+  detailError.value = null
   try {
-    metadata.value = await getFileMetadata(fileId)
+    detail.value = await getFileDetail(fileId)
   } catch (err) {
-    metadataError.value = err instanceof Error ? err.message : String(err)
+    detailError.value = err instanceof Error ? err.message : String(err)
   } finally {
-    loadingMetadata.value = false
+    loadingDetail.value = false
   }
 }
 
@@ -114,7 +120,7 @@ async function toggleLogs(): Promise<void> {
 
 async function runAction(
   kind: 'accept' | 'reject' | 'enrich',
-  call: (id: number) => Promise<FileMetadataResponse>,
+  call: (id: number) => Promise<{ status: FileStatus }>,
   successMessage: string,
   successTone: ToastTone,
 ): Promise<void> {
@@ -123,8 +129,12 @@ async function runAction(
   }
   actionInFlight.value = kind
   try {
-    metadata.value = await call(fileId)
+    const response = await call(fileId)
+    if (detail.value !== null) {
+      detail.value = { ...detail.value, status: response.status }
+    }
     flashToast(successTone, successMessage)
+    await loadDetail()
   } catch (err) {
     flashToast('error', err instanceof Error ? err.message : String(err))
   } finally {
@@ -144,7 +154,7 @@ async function onEnrich(): Promise<void> {
   await runAction('enrich', enrichFile, 'Re-running AI enrichment', 'info')
 }
 
-onMounted(loadMetadata)
+onMounted(loadDetail)
 
 const toastClasses: Record<ToastTone, string> = {
   success: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100',
@@ -172,10 +182,10 @@ const toastClasses: Record<ToastTone, string> = {
     </div>
 
     <p v-if="!fileIdValid" class="text-sm text-destructive">Invalid file id.</p>
-    <p v-else-if="loadingMetadata" class="text-sm text-muted-foreground">Loading metadata…</p>
-    <p v-else-if="metadataError" class="text-sm text-destructive">{{ metadataError }}</p>
+    <p v-else-if="loadingDetail" class="text-sm text-muted-foreground">Loading metadata…</p>
+    <p v-else-if="detailError" class="text-sm text-destructive">{{ detailError }}</p>
 
-    <div v-if="metadata" class="grid gap-4 md:grid-cols-2">
+    <div v-if="detail" class="grid gap-4 md:grid-cols-2">
       <MetadataDiffPanel
         title="Original (file)"
         side="file"
@@ -192,7 +202,7 @@ const toastClasses: Record<ToastTone, string> = {
       />
     </div>
 
-    <div v-if="metadata" class="flex flex-wrap gap-2">
+    <div v-if="detail" class="flex flex-wrap gap-2">
       <Button variant="default" :disabled="decisionDisabled" @click="onAccept">
         {{ actionInFlight === 'accept' ? 'Accepting…' : 'Accept' }}
       </Button>
@@ -204,7 +214,7 @@ const toastClasses: Record<ToastTone, string> = {
       </Button>
     </div>
 
-    <section v-if="metadata" class="space-y-3">
+    <section v-if="detail" class="space-y-3">
       <Button variant="ghost" @click="toggleLogs">
         {{ showLogs ? 'Hide processing log' : 'Show processing log' }}
       </Button>
