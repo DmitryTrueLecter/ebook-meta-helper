@@ -382,4 +382,91 @@ describe('ScanPage', () => {
     await vi.advanceTimersByTimeAsync(6000)
     expect(statusSpy).toHaveBeenCalledTimes(2)
   })
+
+  it('keeps the launcher and last-known progress visible when a poll rejects (does not nuke the page)', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([
+      makeNode({ id: 7, name: 'one', children: [] }),
+    ])
+    const statusSpy = vi.spyOn(api, 'getScanStatus')
+    statusSpy.mockResolvedValueOnce(
+      makeJob({ status: 'running', files_discovered: 200, files_processed: 50 }),
+    )
+    statusSpy.mockRejectedValueOnce(new Error('network down'))
+
+    const wrapper = await mountAtScanRoute()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    // Inline alert appears.
+    expect(wrapper.find('[data-test="scan-poll-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('network down')
+    // But the mount-time failure banner does NOT — different ref, different placement.
+    expect(wrapper.text()).not.toContain('Failed to load scan state')
+    // Launcher is still rendered (Start Scan button visible).
+    expect(wrapper.text()).toContain('Start Scan')
+    // Last known progress is still rendered.
+    expect(wrapper.text()).toContain('50 / 200')
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(true)
+  })
+
+  it('does not schedule a second poll while the first is still in flight (no re-entrancy)', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    const statusSpy = vi.spyOn(api, 'getScanStatus')
+    // First call (mount) — synchronous resolve.
+    statusSpy.mockResolvedValueOnce(makeJob({ status: 'running' }))
+    // Second call (first poll) — never resolves; simulates a slow network.
+    let resolveSecond: (value: ScanJobStatus) => void = () => {}
+    statusSpy.mockReturnValueOnce(
+      new Promise<ScanJobStatus>((resolve) => {
+        resolveSecond = resolve
+      }),
+    )
+    statusSpy.mockResolvedValue(makeJob({ status: 'running' }))
+
+    await mountAtScanRoute()
+    await flushPromises()
+    expect(statusSpy).toHaveBeenCalledTimes(1)
+
+    // Advance to fire the first scheduled poll.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(statusSpy).toHaveBeenCalledTimes(2)
+
+    // First poll hasn't resolved yet — advancing further must NOT spawn another call.
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(statusSpy).toHaveBeenCalledTimes(2)
+
+    // Resolve the slow poll → next poll only schedules now.
+    resolveSecond(makeJob({ status: 'running' }))
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(statusSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('clears the inline poll-error when polling resumes successfully on Start Scan', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([
+      makeNode({ id: 7, name: 'one', children: [] }),
+    ])
+    const statusSpy = vi.spyOn(api, 'getScanStatus')
+    statusSpy.mockResolvedValueOnce(makeJob({ status: 'running' }))
+    statusSpy.mockRejectedValueOnce(new Error('network down'))
+
+    const wrapper = await mountAtScanRoute()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper.find('[data-test="scan-poll-error"]').exists()).toBe(true)
+
+    // User retries via Start Scan — successful trigger should clear the inline alert.
+    vi.spyOn(api, 'triggerDirectoryScan').mockResolvedValue(
+      makeJob({ status: 'running', files_discovered: 0, files_processed: 0 }),
+    )
+    await wrapper.find('select#scan-directory').setValue('7')
+    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Scan'))!
+    await startButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="scan-poll-error"]').exists()).toBe(false)
+  })
 })

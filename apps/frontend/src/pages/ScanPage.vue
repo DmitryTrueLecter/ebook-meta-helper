@@ -33,11 +33,13 @@ const directories = ref<DirectoryOption[]>([])
 const selectedDirectoryId = ref<number | null>(null)
 const scanStatus = ref<ScanJobStatus | null>(null)
 const loadError = ref<string | null>(null)
+const pollError = ref<string | null>(null)
 const startError = ref<string | null>(null)
 const loading = ref(true)
 const starting = ref(false)
 
-let pollHandle: ReturnType<typeof setInterval> | null = null
+let pollHandle: ReturnType<typeof setTimeout> | null = null
+let pollingActive = false
 
 function isActive(status: ScanJobStatus | null): boolean {
   return status !== null && ACTIVE_STATES.includes(status.status)
@@ -53,32 +55,44 @@ const progressPercent = computed<number>(() => {
 })
 
 function stopPolling(): void {
+  pollingActive = false
   if (pollHandle !== null) {
-    clearInterval(pollHandle)
+    clearTimeout(pollHandle)
     pollHandle = null
   }
 }
 
-async function refreshStatus(): Promise<void> {
+async function pollOnce(): Promise<void> {
+  pollHandle = null
   try {
     const next = await getScanStatus()
     scanStatus.value = next
+    pollError.value = null
     if (!isActive(next)) {
       stopPolling()
+      return
     }
   } catch (err) {
-    // Surface polling errors but keep the last known progress visible.
-    loadError.value = err instanceof Error ? err.message : String(err)
+    // A transient poll failure must not nuke the page — surface inline and stop polling.
+    pollError.value = err instanceof Error ? err.message : String(err)
     stopPolling()
+    return
+  }
+  if (pollingActive) {
+    pollHandle = setTimeout(() => {
+      void pollOnce()
+    }, POLL_INTERVAL_MS)
   }
 }
 
 function startPolling(): void {
-  if (pollHandle !== null) {
+  if (pollingActive) {
     return
   }
-  pollHandle = setInterval(() => {
-    void refreshStatus()
+  pollingActive = true
+  pollError.value = null
+  pollHandle = setTimeout(() => {
+    void pollOnce()
   }, POLL_INTERVAL_MS)
 }
 
@@ -183,6 +197,14 @@ onUnmounted(() => {
 
         <p v-if="startError" class="text-sm text-destructive">{{ startError }}</p>
       </section>
+
+      <div
+        v-if="pollError"
+        class="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+        data-test="scan-poll-error"
+      >
+        Live updates paused: {{ pollError }}
+      </div>
 
       <section
         v-if="scanStatus !== null"

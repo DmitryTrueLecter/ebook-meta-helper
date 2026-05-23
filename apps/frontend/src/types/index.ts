@@ -1,9 +1,5 @@
 // TypeScript interfaces mirroring backend Pydantic schemas.
 
-export interface ApiError {
-  detail: string
-}
-
 // Mirrors db.models.file_record.FileStatus.
 // Order matches the backend enum so iteration produces a stable UI order.
 export const FILE_STATUSES = [
