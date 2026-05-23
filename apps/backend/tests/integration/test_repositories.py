@@ -506,6 +506,57 @@ class TestScanJobLifecycle:
         with pytest.raises(ValueError):
             scan_job_repo.start(session, job.id)
 
+    def test_find_active_or_pending_prefers_running_then_pending(self, session):
+        root = _make_directory(session, "/lib/scan3")
+        pending = scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        running = scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        scan_job_repo.start(session, running.id)
+        session.commit()
+
+        found = scan_job_repo.find_active_or_pending(session)
+        assert found is not None
+        assert found.id in {pending.id, running.id}
+
+        scan_job_repo.finish(session, running.id)
+        session.commit()
+        found = scan_job_repo.find_active_or_pending(session)
+        assert found is not None
+        assert found.id == pending.id
+
+    def test_find_active_or_pending_none_when_only_completed(self, session):
+        root = _make_directory(session, "/lib/scan4")
+        job = scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        scan_job_repo.start(session, job.id)
+        scan_job_repo.finish(session, job.id)
+        session.commit()
+
+        assert scan_job_repo.find_active_or_pending(session) is None
+
+    def test_find_latest_completed_returns_most_recent_terminal(self, session):
+        root = _make_directory(session, "/lib/scan5")
+        first = scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        scan_job_repo.start(session, first.id)
+        scan_job_repo.finish(session, first.id)
+        session.commit()
+
+        second = scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        scan_job_repo.start(session, second.id)
+        scan_job_repo.fail(session, second.id, "boom")
+        session.commit()
+
+        found = scan_job_repo.find_latest_completed(session)
+        assert found is not None
+        assert found.id == second.id
+
+    def test_find_latest_completed_ignores_running_and_pending(self, session):
+        root = _make_directory(session, "/lib/scan6")
+        scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        running = scan_job_repo.create(session, root_path=root.path, root_directory_id=root.id)
+        scan_job_repo.start(session, running.id)
+        session.commit()
+
+        assert scan_job_repo.find_latest_completed(session) is None
+
 
 class TestEnrichmentRunLifecycle:
     """Covered as part of pipeline orchestration — open via create, close via finish/fail."""

@@ -89,6 +89,31 @@ def get_active(session: Session) -> Optional[ScanJob]:
     ).scalar_one_or_none()
 
 
+def find_active_or_pending(session: Session) -> Optional[ScanJob]:
+    """Most recent running or pending job — running wins over pending at same timestamps."""
+    return session.execute(
+        select(ScanJob)
+        .where(ScanJob.status.in_([ScanJobStatus.running, ScanJobStatus.pending]))
+        .order_by(ScanJob.created_at.desc(), ScanJob.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def find_latest_completed(session: Session) -> Optional[ScanJob]:
+    """Most recently finished job (done / failed / cancelled), newest by finished_at."""
+    terminal_statuses = [
+        ScanJobStatus.done,
+        ScanJobStatus.failed,
+        ScanJobStatus.cancelled,
+    ]
+    return session.execute(
+        select(ScanJob)
+        .where(ScanJob.status.in_(terminal_statuses))
+        .order_by(ScanJob.finished_at.desc(), ScanJob.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def _load(session: Session, job_id: int) -> ScanJob:
     job = session.get(ScanJob, job_id)
     if job is None:
