@@ -515,7 +515,7 @@ class TestScanJobLifecycle:
 
         found = scan_job_repo.find_active_or_pending(session)
         assert found is not None
-        assert found.id in {pending.id, running.id}
+        assert found.id == running.id
 
         scan_job_repo.finish(session, running.id)
         session.commit()
