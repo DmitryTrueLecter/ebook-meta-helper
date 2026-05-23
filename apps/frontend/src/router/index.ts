@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import FileDetailPage from '@/pages/FileDetailPage.vue'
 import HomePage from '@/pages/HomePage.vue'
 
 const router = createRouter({
@@ -9,6 +10,12 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: HomePage,
+    },
+    {
+      path: '/files/:id(\\d+)',
+      name: 'file-detail',
+      component: FileDetailPage,
+      props: true,
     },
   ],
 })
