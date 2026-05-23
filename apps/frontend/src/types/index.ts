@@ -1,10 +1,6 @@
 // TypeScript interfaces mirroring backend Pydantic schemas
 // (apps/backend/app/api/schemas.py).
 
-export interface ApiError {
-  detail: string
-}
-
 // Mirrors db.models.file_record.FileStatus.
 // Order matches the backend enum so iteration produces a stable UI order.
 export const FILE_STATUSES = [
@@ -57,10 +53,23 @@ export interface DirectoryDetail {
   files: FileListItem[]
 }
 
+// Mirrors apps.backend.db.models.scan_job.ScanJobStatus.
+// Order matches the backend enum.
+export const SCAN_JOB_STATES = [
+  'pending',
+  'running',
+  'done',
+  'failed',
+  'cancelled',
+] as const
+
+export type ScanJobState = (typeof SCAN_JOB_STATES)[number]
+
 // Mirrors apps/backend/app/api/schemas.py:ScanJobStatus.
+// Backend declares `status: str`; we narrow it to the enum the model emits.
 export interface ScanJobStatus {
   id: number
-  status: string
+  status: ScanJobState
   files_discovered: number
   files_processed: number
   current_filename: string | null

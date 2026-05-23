@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   acceptFile,
+  ApiError,
   apiFetch,
   enrichFile,
   getDirectoryDetail,
   getFileDetail,
   getFileLogs,
+  getScanStatus,
   listDirectories,
   rejectFile,
   triggerDirectoryScan,
@@ -73,6 +75,28 @@ describe('apiFetch', () => {
     )
 
     await expect(apiFetch('/x')).rejects.toThrow(/500.*database down/)
+  })
+
+  it('throws an ApiError with the HTTP status on a non-ok response', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 404,
+        statusText: 'Not Found',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'nope' }),
+      }),
+    )
+
+    let thrown: unknown = null
+    try {
+      await apiFetch('/x')
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown).toBeInstanceOf(ApiError)
+    expect((thrown as ApiError).status).toBe(404)
   })
 
   it('falls back to statusText when the error body is unparseable', async () => {
@@ -224,6 +248,76 @@ describe('triggerDirectoryScan', () => {
     )
 
     await expect(triggerDirectoryScan(42)).rejects.toThrow(/scan worker offline/)
+  })
+})
+
+describe('getScanStatus', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/scan/status and returns the job when one is active', async () => {
+    const job = {
+      id: 5,
+      status: 'running',
+      files_discovered: 100,
+      files_processed: 42,
+      current_filename: 'a.epub',
+    }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(job) }),
+    )
+
+    const result = await getScanStatus()
+
+    expect(result).toEqual(job)
+    expect(fetchMock).toHaveBeenCalledWith('/api/scan/status', expect.any(Object))
+  })
+
+  it('returns null on 404 (no active scan)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 404,
+        statusText: 'Not Found',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'no active scan' }),
+      }),
+    )
+
+    const result = await getScanStatus()
+
+    expect(result).toBeNull()
+  })
+
+  it('returns null on 204 No Content', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 204, statusText: 'No Content' }),
+    )
+
+    const result = await getScanStatus()
+
+    expect(result).toBeNull()
+  })
+
+  it('throws on 500 (real error — not silently masked as null)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'boom' }),
+      }),
+    )
+
+    await expect(getScanStatus()).rejects.toThrow(/500.*boom/)
   })
 })
 
