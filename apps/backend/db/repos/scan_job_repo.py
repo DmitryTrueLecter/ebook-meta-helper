@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from db.models.scan_job import ScanJob, ScanJobStatus
@@ -85,6 +85,35 @@ def get_active(session: Session) -> Optional[ScanJob]:
         select(ScanJob)
         .where(ScanJob.status == ScanJobStatus.running)
         .order_by(ScanJob.started_at.desc(), ScanJob.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def find_active_or_pending(session: Session) -> Optional[ScanJob]:
+    """Most recent running or pending job — running always wins, ties broken by newest created_at then id."""
+    status_priority = case(
+        (ScanJob.status == ScanJobStatus.running, 0),
+        else_=1,
+    )
+    return session.execute(
+        select(ScanJob)
+        .where(ScanJob.status.in_([ScanJobStatus.running, ScanJobStatus.pending]))
+        .order_by(status_priority, ScanJob.created_at.desc(), ScanJob.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def find_latest_completed(session: Session) -> Optional[ScanJob]:
+    """Most recently finished job (done / failed / cancelled), newest by finished_at."""
+    terminal_statuses = [
+        ScanJobStatus.done,
+        ScanJobStatus.failed,
+        ScanJobStatus.cancelled,
+    ]
+    return session.execute(
+        select(ScanJob)
+        .where(ScanJob.status.in_(terminal_statuses))
+        .order_by(ScanJob.finished_at.desc(), ScanJob.id.desc())
         .limit(1)
     ).scalar_one_or_none()
 

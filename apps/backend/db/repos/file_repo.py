@@ -13,6 +13,14 @@ from db.models.file_record import FileRecord, FileStatus
 
 
 @dataclass(frozen=True)
+class PaginatedRecords:
+    """One page of FileRecord rows plus the total matching row count."""
+
+    items: list[FileRecord]
+    total: int
+
+
+@dataclass(frozen=True)
 class FileAttrs:
     """Optional scalar attributes used when creating a new FileRecord."""
 
@@ -117,6 +125,42 @@ def get_by_directory(
         stmt = stmt.where(FileRecord.status == status)
     stmt = stmt.order_by(FileRecord.sort_order.asc(), FileRecord.filename.asc())
     return list(session.execute(stmt).scalars())
+
+
+def get_by_id(session: Session, file_id: int) -> Optional[FileRecord]:
+    """Return the FileRecord by primary key, or None if missing."""
+    return session.get(FileRecord, file_id)
+
+
+def list_paginated(
+    session: Session,
+    page: int,
+    page_size: int,
+    directory_id: Optional[int] = None,
+    status: Optional[FileStatus] = None,
+) -> PaginatedRecords:
+    """Page over file_records, optionally narrowed by directory and/or status."""
+    if page < 1:
+        raise ValueError(f"page must be >= 1, got {page}")
+    if page_size < 1:
+        raise ValueError(f"page_size must be >= 1, got {page_size}")
+
+    base = select(FileRecord)
+    count_stmt = select(func.count()).select_from(FileRecord)
+    if directory_id is not None:
+        base = base.where(FileRecord.directory_id == directory_id)
+        count_stmt = count_stmt.where(FileRecord.directory_id == directory_id)
+    if status is not None:
+        base = base.where(FileRecord.status == status)
+        count_stmt = count_stmt.where(FileRecord.status == status)
+
+    total = session.execute(count_stmt).scalar_one()
+    rows = session.execute(
+        base.order_by(FileRecord.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).scalars()
+    return PaginatedRecords(items=list(rows), total=int(total))
 
 
 _STALLED_STATUSES = (FileStatus.reading, FileStatus.ai_queued, FileStatus.enriching)

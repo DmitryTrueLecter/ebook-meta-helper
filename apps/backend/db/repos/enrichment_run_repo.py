@@ -7,6 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db.models.enrichment_run import (
@@ -68,6 +69,22 @@ def fail(session: Session, run_id: int, error_message: str) -> EnrichmentRun:
     run.finished_at = datetime.now()
     session.flush()
     return run
+
+
+def find_latest_running(
+    session: Session, directory_id: Optional[int], trigger: EnrichmentTrigger
+) -> Optional[EnrichmentRun]:
+    """Return the most-recent still-running run for the given (directory, trigger), or None."""
+    return session.execute(
+        select(EnrichmentRun)
+        .where(
+            EnrichmentRun.directory_id == directory_id,
+            EnrichmentRun.trigger == trigger,
+            EnrichmentRun.status == EnrichmentStatus.running,
+        )
+        .order_by(EnrichmentRun.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def _load_open_run(session: Session, run_id: int) -> EnrichmentRun:

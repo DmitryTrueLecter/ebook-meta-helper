@@ -85,6 +85,45 @@ class TestFinish:
             )
 
 
+class TestFindLatestRunning:
+    def test_returns_none_when_no_runs(self, session):
+        result = enrichment_run_repo.find_latest_running(
+            session, directory_id=None, trigger=EnrichmentTrigger.user_file
+        )
+        assert result is None
+
+    def test_returns_latest_running_for_directory_and_trigger(self, session):
+        d = _new_directory(session)
+        enrichment_run_repo.create(session, _open(d.id, trigger=EnrichmentTrigger.user_file))
+        run_two = enrichment_run_repo.create(
+            session, _open(d.id, trigger=EnrichmentTrigger.user_file)
+        )
+        result = enrichment_run_repo.find_latest_running(
+            session, directory_id=d.id, trigger=EnrichmentTrigger.user_file
+        )
+        assert result is not None
+        assert result.id == run_two.id
+
+    def test_ignores_closed_runs(self, session):
+        d = _new_directory(session)
+        run = enrichment_run_repo.create(session, _open(d.id, trigger=EnrichmentTrigger.user_file))
+        enrichment_run_repo.finish(
+            session, run.id, EnrichmentRunResult(success_count=1, failure_count=0)
+        )
+        result = enrichment_run_repo.find_latest_running(
+            session, directory_id=d.id, trigger=EnrichmentTrigger.user_file
+        )
+        assert result is None
+
+    def test_filters_by_trigger(self, session):
+        d = _new_directory(session)
+        enrichment_run_repo.create(session, _open(d.id, trigger=EnrichmentTrigger.scan))
+        result = enrichment_run_repo.find_latest_running(
+            session, directory_id=d.id, trigger=EnrichmentTrigger.user_file
+        )
+        assert result is None
+
+
 class TestFail:
     def test_marks_failed_with_message(self, session):
         run = enrichment_run_repo.create(session, _open(None))
