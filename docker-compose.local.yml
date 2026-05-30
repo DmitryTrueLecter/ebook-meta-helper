@@ -24,6 +24,9 @@
 
 services:
   api:
+    build:
+      context: .
+      dockerfile: Dockerfile
     # Drop the production Traefik labels by overwriting with an empty list.
     labels: []
     ports:
@@ -35,6 +38,9 @@ services:
       - backend
 
   watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
     networks:
       - backend
 
