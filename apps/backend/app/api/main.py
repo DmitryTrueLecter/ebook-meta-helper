@@ -1,6 +1,7 @@
 """FastAPI app: CORS, health, API routers, and SPA static-file serving."""
 
 import logging
+import os
 import traceback
 from pathlib import Path
 
@@ -60,7 +61,27 @@ def health():
 
 
 # SPA fallback — must come after every /api/* route so API paths are not shadowed.
-FRONTEND_DIR = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+def _resolve_frontend_dir() -> Path:
+    """Locate the built SPA, robust to layout differences.
+
+    The container flattens ``apps/backend/app/`` to ``/app/app/`` (dist at
+    ``/app/frontend/dist`` → anchor is ``parents[2]``), while the dev tree keeps
+    ``apps/backend/app/api/main.py`` with dist at ``apps/frontend/dist``
+    (anchor is ``parents[3]``). A hardcoded parent depth is wrong in one of the
+    two. ``FRONTEND_DIST_DIR`` overrides the search entirely.
+    """
+    env = os.environ.get("FRONTEND_DIST_DIR")
+    if env:
+        return Path(env)
+    here = Path(__file__).resolve()
+    for anchor in (here.parents[2], here.parents[3]):
+        candidate = anchor / "frontend" / "dist"
+        if candidate.exists():
+            return candidate
+    return here.parents[2] / "frontend" / "dist"
+
+
+FRONTEND_DIR = _resolve_frontend_dir()
 
 if FRONTEND_DIR.exists():
     app.mount(
