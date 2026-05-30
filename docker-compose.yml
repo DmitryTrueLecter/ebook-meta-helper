@@ -67,7 +67,8 @@ services:
       - mariadb_data:/var/lib/mysql
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "mysql -u root -p\"$$MARIADB_ROOT_PASSWORD\" -e 'SELECT 1' || exit 1"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p\"$$MARIADB_ROOT_PASSWORD\" --silent"]
+      start_period: 30s
       interval: 10s
       timeout: 5s
       retries: 5
