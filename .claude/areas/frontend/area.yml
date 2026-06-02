@@ -14,6 +14,10 @@ stack:
   container: Docker (Node dev server with hot reload)
   tests: Vitest + Vue Test Utils (happy-dom)
 
+test_levels:
+  unit: Vitest + Vue Test Utils (happy-dom)
+  integration: Vitest + Vue Test Utils (happy-dom)
+
 structure:
   - "apps/frontend/src/pages/       — page-level components (one per route)"
   - "apps/frontend/src/components/  — shared/reusable components"
@@ -24,6 +28,7 @@ structure:
   - "apps/frontend/src/composables/ — shared Vue composables"
   - "apps/frontend/src/__tests__/   — vitest test suite (mirrors src/: components/, composables/, pages/, router/, services/)"
   - "apps/frontend/Dockerfile       — dev container (hot reload on :5173)"
+  - "apps/frontend/src/types/generated/ — openapi-typescript output (do not edit manually; regenerate via npm run gen:types)"
 
 planned_pages:
   - "HomeView       — stats: total files, directories, last processed"
@@ -43,6 +48,8 @@ review_checks:
   - "Promises must be awaited or explicitly handled"
   - "shadcn-vue components in src/components/ui/ must not be edited manually — regenerate via CLI"
   - "TypeScript strict mode — no implicit any"
+  - "FE-CONTRACT-001: src/types/generated/** must not be edited by hand — regenerate via npm run gen:types (grep: manual diffs to src/types/generated/)"
+  - "FE-CONTRACT-002: src/types/index.ts must import base shapes from ./generated/openapi and narrow via Omit+intersection — no standalone interface redeclaring a backend schema (grep: `export interface (FileListItem|DirectoryDetail|FileDetail|MetadataSnapshot|ScanJobStatus|PaginatedFiles)`)"
 
 guidelines:
   - Vue 3 Composition API only. No Options API.
@@ -53,6 +60,7 @@ guidelines:
   - Tailwind for layout and spacing. shadcn-vue for interactive UI elements (tables, dialogs, buttons).
   - New shadcn-vue components added via CLI (npx shadcn-vue@latest add <component>), not written by hand.
   - Every new page, component, or composable ships with vitest coverage in src/__tests__/, written in the same dev pass that introduces the code.
+  - src/types/generated/openapi.ts is generated from ../backend/contract/openapi.json via `npm run gen:types`. Never edit it by hand. Hand-narrowing (enum unions, JsonValue) lives only in src/types/index.ts as Omit + intersection over the generated base.
 
 file_size_caps:
   look: 250
