@@ -30,6 +30,7 @@ devops_paths:
   - ".dockerignore"
   - "Justfile"
   - ".env.example"
+  - ".github/**"
 
 runtime:
 
