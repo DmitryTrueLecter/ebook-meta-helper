@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.projections import to_scan_status
 from app.api.schemas import ScanJobStatus
-from db.models.scan_job import ScanJob
 from db.repos import scan_job_repo
 
 router = APIRouter(prefix="/api/scan", tags=["scan"])
@@ -26,15 +26,4 @@ def get_scan_status(db: Session = Depends(get_db)) -> Optional[ScanJobStatus]:
         job = scan_job_repo.find_latest_completed(db)
     if job is None:
         return None
-    return _to_scan_status(job)
-
-
-def _to_scan_status(job: ScanJob) -> ScanJobStatus:
-    current_filename = job.current_file.filename if job.current_file is not None else None
-    return ScanJobStatus(
-        id=job.id,
-        status=job.status.value,
-        files_discovered=job.files_discovered,
-        files_processed=job.files_processed,
-        current_filename=current_filename,
-    )
+    return to_scan_status(job)
