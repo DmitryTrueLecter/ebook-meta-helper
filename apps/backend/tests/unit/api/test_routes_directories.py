@@ -205,6 +205,7 @@ class TestTriggerDirectoryScan:
         created_job = SimpleNamespace(
             id=42, status=ScanJobState.pending,
             files_discovered=0, files_processed=0,
+            current_file=None, error_message=None,
         )
         captured = {}
 
@@ -224,6 +225,7 @@ class TestTriggerDirectoryScan:
         assert body["status"] == "pending"
         assert body["files_discovered"] == 0
         assert body["current_filename"] is None
+        assert body["error_message"] is None
         assert captured == {"root_path": "/lib", "root_directory_id": 1}
         fake_session.commit.assert_called_once()
 

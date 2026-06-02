@@ -129,6 +129,7 @@ class ScanJobStatus(BaseModel):
     files_discovered: int
     files_processed: int
     current_filename: str | None
+    error_message: str | None
 
 
 DirectoryNode.model_rebuild()
