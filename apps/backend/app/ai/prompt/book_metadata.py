@@ -48,10 +48,11 @@ def build_system_prompt() -> str:
     )
     return "\n". join(lines)
 
-def get_response_format() -> str:
+def get_response_format() -> dict:
+    """Responses API text.format object (json_schema) for book metadata."""
     schema_path = Path(__file__).parent / "../contracts/book_metadata.v2.json"
     with open(schema_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return json.load(f)["format"]
 
 def build_book_metadata_prompt(
     record: BookRecord,
