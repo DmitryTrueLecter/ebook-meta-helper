@@ -20,6 +20,16 @@ from db.models.directory_hint import DirectoryHint
 from db.models.enrichment_run import EnrichmentRun, EnrichmentStatus
 from db.models.file_record import FileRecord, FileStatus
 from db.models.scan_job import ScanJob, ScanJobStatus
+from db.repos import scan_job_repo
+
+
+def _running_job(session_factory, root: str) -> int:
+    """Create and claim a running ScanJob — the state the watcher hands to run_scan_cycle."""
+    with session_factory() as session:
+        scan_job_repo.create(session, root_path=root)
+        session.flush()
+        job = scan_job_repo.claim_next_pending(session)
+        return job.id
 
 
 @pytest.fixture
@@ -125,7 +135,7 @@ class TestSingleDirectoryHappyPath:
 
         provider = _stub_provider()
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            result = run_scan_cycle(str(root), session_factory=session_factory)
+            result = run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         job = inspect_session.get(ScanJob, result.scan_job_id)
         assert job.status == ScanJobStatus.done
@@ -144,7 +154,7 @@ class TestSingleDirectoryHappyPath:
         provider = _stub_provider(hint_data)
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         hints = inspect_session.query(DirectoryHint).all()
         sci_fi_hints = [h for h in hints if h.directory.name == "sci-fi"]
@@ -160,7 +170,7 @@ class TestSingleDirectoryHappyPath:
         provider = _stub_provider()
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         # one call for "library" root (no pending files there) is skipped;
         # one call for "sci-fi" with both files.
@@ -178,7 +188,7 @@ class TestSingleDirectoryHappyPath:
         provider = _stub_provider()
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         files = inspect_session.query(FileRecord).all()
         assert len(files) == 1
@@ -200,7 +210,7 @@ class TestHintThreadingToEnrich:
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), patch(
             "app.pipeline.process_file.read_metadata", side_effect=_ok_read
         ), patch("app.pipeline.process_file.enrich", side_effect=_spy_enrich):
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         assert captured["hint"] is not None
         assert captured["hint"]["series_name"] == "The Expanse"
@@ -221,7 +231,7 @@ class TestMultipleDirectories:
         provider = _stub_provider()
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         # one summarize call per directory with pending files
         assert provider.summarize_directory.call_count == 2
@@ -246,7 +256,7 @@ class TestMultipleDirectories:
         provider = _stub_provider()
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            result = run_scan_cycle(str(root), session_factory=session_factory)
+            result = run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         assert result.files_discovered == 3
         assert result.files_processed == 3
@@ -270,7 +280,7 @@ class TestFailurePaths:
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), patch(
             "app.pipeline.process_file.read_metadata", side_effect=_selective_read
         ), patch("app.pipeline.process_file.enrich", side_effect=_ok_enrich):
-            result = run_scan_cycle(str(root), session_factory=session_factory)
+            result = run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         assert result.files_discovered == 2
         assert result.files_processed == 2
@@ -294,7 +304,7 @@ class TestFailurePaths:
         provider = _stub_provider()
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         runs = inspect_session.query(EnrichmentRun).all()
         assert len(runs) == 2  # one per file
@@ -313,7 +323,7 @@ class TestEmptyTree:
         provider = _stub_provider()
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            result = run_scan_cycle(str(root), session_factory=session_factory)
+            result = run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         assert result.files_discovered == 0
         assert result.files_processed == 0
@@ -344,7 +354,7 @@ class TestScanJobProgress:
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), patch(
             "app.pipeline.process_file.read_metadata", side_effect=_ok_read
         ), patch("app.pipeline.process_file.enrich", side_effect=_record_progress):
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         # By the time the first file is being enriched, files_discovered = 3 already
         assert observed_files_discovered == [3, 3, 3]
@@ -368,7 +378,7 @@ class TestScanJobProgress:
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), patch(
             "app.pipeline.process_file.read_metadata", side_effect=_ok_read
         ), patch("app.pipeline.process_file.enrich", side_effect=_capture_current):
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         # both captured ids correspond to real FileRecord rows
         all_ids = {f.id for f in inspect_session.query(FileRecord).all()}
@@ -395,25 +405,26 @@ class TestSessionPolicy:
                 yield s
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
-            run_scan_cycle(str(root), session_factory=counting_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=counting_factory)
 
         # Policy: many short sessions, not one long-held. Conservative floor for 2 files.
         assert open_count >= 8
 
 
 class TestEnvValidation:
-    def test_missing_ai_provider_raises_before_scan_job_done(
+    def test_missing_ai_provider_marks_scan_job_failed(
         self, tmp_path, session_factory, inspect_session, monkeypatch
     ):
         root = _make_book_tree(tmp_path, {"sci-fi": ["a.fb2"]})
         monkeypatch.delenv("AI_PROVIDER", raising=False)
 
         with pytest.raises(RuntimeError, match="AI_PROVIDER is not set"):
-            run_scan_cycle(str(root), session_factory=session_factory)
+            run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
-        # No ScanJob created — env validation runs first
-        jobs = inspect_session.query(ScanJob).all()
-        assert jobs == []
+        # The pre-claimed job must fail, not stay `running` forever and 409 every later scan.
+        job = inspect_session.query(ScanJob).one()
+        assert job.status == ScanJobStatus.failed
+        assert job.error_message == "AI_PROVIDER is not set"
 
 
 class TestScanJobFailureMarking:
@@ -428,7 +439,7 @@ class TestScanJobFailureMarking:
 
         with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), _patched_pipeline():
             with pytest.raises(RuntimeError, match="OpenAI outage"):
-                run_scan_cycle(str(root), session_factory=session_factory)
+                run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
         job = inspect_session.query(ScanJob).first()
         assert job is not None

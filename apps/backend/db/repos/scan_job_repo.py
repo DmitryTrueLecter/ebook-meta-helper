@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import case, select
+from sqlalchemy import case, select, update
 from sqlalchemy.orm import Session
 
 from db.models.scan_job import ScanJob, ScanJobStatus
@@ -45,6 +45,32 @@ def start(session: Session, job_id: int) -> ScanJob:
     job.status = ScanJobStatus.running
     job.started_at = datetime.now()
     session.flush()
+    return job
+
+
+def claim_next_pending(session: Session) -> Optional[ScanJob]:
+    """Atomically move the oldest pending job to running and return it; None if none claimable."""
+    # The status-guarded UPDATE + rowcount==1 is the race gate: only the transaction whose
+    # UPDATE still matches a pending row wins, so two watchers cannot claim the same job.
+    oldest_pending_id = session.execute(
+        select(ScanJob.id)
+        .where(ScanJob.status == ScanJobStatus.pending)
+        .order_by(ScanJob.created_at.asc(), ScanJob.id.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if oldest_pending_id is None:
+        return None
+
+    claimed = session.execute(
+        update(ScanJob)
+        .where(ScanJob.id == oldest_pending_id, ScanJob.status == ScanJobStatus.pending)
+        .values(status=ScanJobStatus.running, started_at=datetime.now())
+    )
+    if claimed.rowcount != 1:
+        return None
+
+    job = session.get(ScanJob, oldest_pending_id)
+    session.refresh(job)  # bulk UPDATE bypassed the identity map — reload running/started_at
     return job
 
 

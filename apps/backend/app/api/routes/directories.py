@@ -68,11 +68,11 @@ def trigger_directory_scan(
             detail=f"Directory {directory_id} not found",
         )
 
-    active = scan_job_repo.get_active(db)
+    active = scan_job_repo.find_active_or_pending(db)
     if active is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Scan job {active.id} is already running",
+            detail=f"Scan job {active.id} is already {active.status.value}",
         )
 
     job = scan_job_repo.create(

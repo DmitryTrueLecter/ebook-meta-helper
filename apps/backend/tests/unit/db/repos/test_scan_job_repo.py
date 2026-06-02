@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from db.models.scan_job import ScanJobStatus
+from db.models.scan_job import ScanJob, ScanJobStatus
 from db.repos import scan_job_repo
 from db.repos.scan_job_repo import ScanProgress
 
@@ -103,3 +103,36 @@ class TestGetActive:
         scan_job_repo.start(session, job.id)
         scan_job_repo.finish(session, job.id)
         assert scan_job_repo.get_active(session) is None
+
+
+class TestClaimNextPending:
+    def test_claims_oldest_pending_and_marks_running(self, session):
+        first = scan_job_repo.create(session, root_path="/first")
+        scan_job_repo.create(session, root_path="/second")
+
+        claimed = scan_job_repo.claim_next_pending(session)
+        assert claimed is not None
+        assert claimed.id == first.id
+        assert claimed.status == ScanJobStatus.running
+        assert claimed.started_at is not None
+
+    def test_returns_none_when_no_pending(self, session):
+        job = scan_job_repo.create(session, root_path="/d")
+        scan_job_repo.start(session, job.id)  # only job is already running
+        assert scan_job_repo.claim_next_pending(session) is None
+
+    def test_second_claim_takes_next_pending(self, session):
+        first = scan_job_repo.create(session, root_path="/first")
+        second = scan_job_repo.create(session, root_path="/second")
+
+        claimed_first = scan_job_repo.claim_next_pending(session)
+        claimed_second = scan_job_repo.claim_next_pending(session)
+        assert claimed_first.id == first.id
+        assert claimed_second.id == second.id
+
+    def test_running_job_not_reclaimed(self, session):
+        job = scan_job_repo.create(session, root_path="/d")
+        scan_job_repo.claim_next_pending(session)
+        # the same running job must not be handed out again
+        assert scan_job_repo.claim_next_pending(session) is None
+        assert session.get(ScanJob, job.id).status == ScanJobStatus.running

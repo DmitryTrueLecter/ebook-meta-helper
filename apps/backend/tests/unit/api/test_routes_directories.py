@@ -215,7 +215,7 @@ class TestTriggerDirectoryScan:
             return created_job
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.scan_job_repo, "get_active", lambda _s: None)
+        monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: None)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
         response = test_client.post("/api/directories/1/scan")
@@ -241,12 +241,33 @@ class TestTriggerDirectoryScan:
             return SimpleNamespace(id=99, status=ScanJobState.pending, files_discovered=0, files_processed=0)
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.scan_job_repo, "get_active", lambda _s: running)
+        monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: running)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
         response = test_client.post("/api/directories/1/scan")
         assert response.status_code == 409
         assert "7" in response.json()["detail"]
+        assert create_called["count"] == 0
+
+    def test_pending_job_also_returns_409(self, client, monkeypatch):
+        """A queued-but-not-yet-running job blocks a new enqueue — only one job at a time."""
+        test_client, _ = client
+        directory = _make_directory(1, "lib", "/lib", 0)
+        pending = SimpleNamespace(id=8, status=ScanJobState.pending)
+
+        create_called = {"count": 0}
+
+        def fake_create(*_args, **_kwargs):
+            create_called["count"] += 1
+            return SimpleNamespace(id=99, status=ScanJobState.pending, files_discovered=0, files_processed=0)
+
+        monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
+        monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: pending)
+        monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
+
+        response = test_client.post("/api/directories/1/scan")
+        assert response.status_code == 409
+        assert "8" in response.json()["detail"]
         assert create_called["count"] == 0
 
     def test_unknown_directory_returns_404(self, client, monkeypatch):
