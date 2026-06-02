@@ -65,20 +65,17 @@ class OpenAIProvider(AIProvider):
         client = self._get_client()
         system_prompt = build_system_prompt()
         user_prompt = build_book_metadata_prompt(record, directory_hint)
-        format_prompt = get_response_format()
-        print(system_prompt)
-        print(user_prompt)
+        response_format = get_response_format()
 
         response = client.responses.create(
-            model=os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+            model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             reasoning={"effort": "high"},
             instructions=system_prompt,
             input=user_prompt,
-            text=format_prompt
+            text={"format": response_format},
         )
 
         content = response.output_text
-        print(content)
         return json.loads(content)
 
     def _call_openai_for_directory_summary(
@@ -87,14 +84,14 @@ class OpenAIProvider(AIProvider):
         client = self._get_client()
         system_prompt = build_directory_summary_system_prompt()
         user_prompt = build_directory_summary_user_prompt(files)
-        format_prompt = get_directory_summary_response_format()
+        response_format = get_directory_summary_response_format()
 
         response = client.responses.create(
-            model=os.environ.get("OPENAI_MODEL", "gpt-5.2"),
+            model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             reasoning={"effort": "high"},
             instructions=system_prompt,
             input=user_prompt,
-            text=format_prompt,
+            text={"format": response_format},
         )
 
         content = response.output_text
