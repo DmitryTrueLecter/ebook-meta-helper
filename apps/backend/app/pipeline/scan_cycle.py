@@ -1,4 +1,4 @@
-"""One scan pass: create ScanJob, walk filesystem, summarize per directory, process each file."""
+"""One scan pass against an already-running ScanJob: walk filesystem, summarize per directory, process each file."""
 
 from __future__ import annotations
 
@@ -59,11 +59,16 @@ class _CycleContext:
     session_factory: "SessionFactory"
 
 
-def run_scan_cycle(root_dir: str, session_factory: SessionFactory = get_session) -> CycleResult:
-    """Execute one full DB-driven scan over `root_dir` using short sessions throughout."""
+def run_scan_cycle(
+    scan_job_id: int,
+    root_dir: str,
+    session_factory: SessionFactory = get_session,
+) -> CycleResult:
+    """Execute one full DB-driven scan over `root_dir`, driving the already-running `scan_job_id`."""
+    # Driving the caller-provided id (not a fresh one) is what makes a UI-triggered scan
+    # update the same job the API returned to the user.
     provider_name = _require_env("AI_PROVIDER")
 
-    scan_job_id = _create_scan_job(root_dir, session_factory)
     ctx = _CycleContext(
         scan_job_id=scan_job_id,
         provider_name=provider_name,
@@ -88,13 +93,6 @@ def run_scan_cycle(root_dir: str, session_factory: SessionFactory = get_session)
     except Exception as exc:
         _fail_scan_job(scan_job_id, str(exc), session_factory)
         raise
-
-
-def _create_scan_job(root_dir: str, session_factory: SessionFactory) -> int:
-    with session_factory() as session:
-        job = scan_job_repo.create(session, root_path=root_dir)
-        scan_job_repo.start(session, job.id)
-        return job.id
 
 
 def _populate_filesystem_state(root_dir: str, session_factory: SessionFactory) -> None:
