@@ -412,7 +412,7 @@ class TestSessionPolicy:
 
 
 class TestEnvValidation:
-    def test_missing_ai_provider_raises_before_scan_job_done(
+    def test_missing_ai_provider_marks_scan_job_failed(
         self, tmp_path, session_factory, inspect_session, monkeypatch
     ):
         root = _make_book_tree(tmp_path, {"sci-fi": ["a.fb2"]})
@@ -421,13 +421,10 @@ class TestEnvValidation:
         with pytest.raises(RuntimeError, match="AI_PROVIDER is not set"):
             run_scan_cycle(_running_job(session_factory, str(root)), str(root), session_factory=session_factory)
 
-        # env validation runs before any scan work — the claimed job is left untouched,
-        # neither failed nor advanced (it is not the cycle's job to mark its own env error).
+        # The pre-claimed job must fail, not stay `running` forever and 409 every later scan.
         job = inspect_session.query(ScanJob).one()
-        assert job.status == ScanJobStatus.running
-        assert job.error_message is None
-        assert job.finished_at is None
-        assert job.files_discovered == 0
+        assert job.status == ScanJobStatus.failed
+        assert job.error_message == "AI_PROVIDER is not set"
 
 
 class TestScanJobFailureMarking:

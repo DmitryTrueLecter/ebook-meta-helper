@@ -67,15 +67,16 @@ def run_scan_cycle(
     """Execute one full DB-driven scan over `root_dir`, driving the already-running `scan_job_id`."""
     # Driving the caller-provided id (not a fresh one) is what makes a UI-triggered scan
     # update the same job the API returned to the user.
-    provider_name = _require_env("AI_PROVIDER")
-
-    ctx = _CycleContext(
-        scan_job_id=scan_job_id,
-        provider_name=provider_name,
-        session_factory=session_factory,
-    )
-
     try:
+        # Inside the try so a missing AI_PROVIDER fails the pre-claimed job instead of
+        # leaving it stuck `running` forever and 409-ing every later scan.
+        provider_name = _require_env("AI_PROVIDER")
+        ctx = _CycleContext(
+            scan_job_id=scan_job_id,
+            provider_name=provider_name,
+            session_factory=session_factory,
+        )
+
         _populate_filesystem_state(root_dir, session_factory)
         directory_ids = _collect_pending_directory_ids(session_factory)
         files_discovered = _count_pending(session_factory)
