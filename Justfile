@@ -22,8 +22,13 @@ down-local:
 # -----------------------------------------------------------------------------
 # Uses docker-compose.yml only. The external `web` network must already exist
 # on the host (created by the Traefik stack) — see environments.md.
+# IMAGE_TAG defaults to `latest`; pin a specific tag for a controlled deploy:
+#   IMAGE_TAG=sha-abc1234 just up-prod
+pull-prod:
+    docker compose pull
+
 up-prod:
-    docker compose up -d --build
+    docker compose up -d
 
 down-prod:
     docker compose down
