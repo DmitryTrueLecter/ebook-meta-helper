@@ -12,7 +12,7 @@ from app.api.schemas import (
     DirectoryDetail,
     DirectoryNode,
     FileListItem,
-    ScanJobStatus,
+    ScanJobProgress,
 )
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
@@ -54,12 +54,12 @@ def get_directory_detail(
 
 @router.post(
     "/{directory_id}/scan",
-    response_model=ScanJobStatus,
+    response_model=ScanJobProgress,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def trigger_directory_scan(
     directory_id: int, db: Session = Depends(get_db)
-) -> ScanJobStatus:
+) -> ScanJobProgress:
     """Enqueue a scan + enrichment job for the directory; watcher picks up `pending` rows."""
     directory = directory_repo.get_by_id(db, directory_id)
     if directory is None:
@@ -146,8 +146,8 @@ def _to_list_item(record: FileRecord, has_ai: bool) -> FileListItem:
     )
 
 
-def _to_scan_status(job: ScanJob) -> ScanJobStatus:
-    return ScanJobStatus(
+def _to_scan_status(job: ScanJob) -> ScanJobProgress:
+    return ScanJobProgress(
         id=job.id,
         status=job.status.value,
         files_discovered=job.files_discovered,
