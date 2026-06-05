@@ -33,6 +33,13 @@ Single source of truth for environment topology, service endpoints, deploy mecha
 - **Host:** Linux server (host details provided by operator; `<PROD_HOST_IP>` placeholder). SSH access via `ssh <DEPLOY_USER>@<PROD_HOST_IP>`.
 - **Domain:** `meta.dmitry.work` (A record → `<PROD_HOST_IP>`; must exist before ACME issues a certificate).
 - **Authentication:** Traefik HTTP Basic Auth middleware `ebook-auth` is applied to the `ebook-meta-helper` router. Credentials are sourced from `BASIC_AUTH_USERS` in the server `.env`. **The app itself has NO built-in authentication** — the Traefik middleware is the ONLY auth layer. Do not bypass or remove it without an alternative gate.
+  - **Generating `BASIC_AUTH_USERS` (htpasswd, bcrypt):** produce a `user:hash` entry with one of:
+    - `htpasswd -nbB <user> <password>`  (apache2-utils)
+    - `docker run --rm httpd:2.4-alpine htpasswd -nbB <user> <password>`  (no local install)
+    - `python3 -c "import bcrypt; print('<user>:'+bcrypt.hashpw(b'<password>', bcrypt.gensalt(10)).decode())"`
+    Output looks like `admin:$2y$10$Xa...`.
+  - **Escaping rule (load-bearing):** when writing the entry into `.env`, double every `$` to `$$` — Compose interpolates a single `$` as a variable reference. Example: htpasswd prints `admin:$2y$10$Xa...`; in `.env` you write `BASIC_AUTH_USERS=admin:$$2y$$10$$Xa...`. Multiple users: comma-separated, same `$$` escaping per entry.
+  - **Verify after deploy (behavioural):** open `https://meta.dmitry.work` — it must prompt for credentials; wrong creds → 401, correct → pass. If it never prompts or always 401s, the `$$` escaping is wrong — toggle it and re-`up`.
 - **Traefik topology:** A shared Traefik stack (separate `docker-compose.yml`, not part of this repo) runs on the same host. It owns:
   - Ports `80` and `443`.
   - HTTP→HTTPS global redirect (entrypoint `web` → `websecure`).
@@ -49,14 +56,12 @@ Single source of truth for environment topology, service endpoints, deploy mecha
   - `web` — external, shared with Traefik. Only `api` joins it.
   - `backend` — internal bridge; `api`, `watcher`, and `mariadb` join it. `internal: false` because `api` needs outbound internet access (OpenAI API calls).
 - **Image delivery:** CI (GitHub Actions `build-push.yml`) builds and pushes `ghcr.io/dmitrytruelecter/ebook-meta-helper:<tag>` to GHCR on every push to `dev` (tag `sha-<short>` + `dev`) and on every semver tag push (tag `<version>` + `latest`). The prod compose references `ghcr.io/dmitrytruelecter/ebook-meta-helper:${IMAGE_TAG:-latest}`. Set `IMAGE_TAG` in the server `.env` to pin a specific digest.
-- **Deploy mechanic (manual):**
-  1. SSH onto the prod host.
-  2. `docker login ghcr.io` (once, or use a PAT stored in the server's Docker credential store).
-  3. `cd <DEPLOY_DIR>` (e.g. `/srv/ebook-meta-helper`).
-  4. Update `IMAGE_TAG` in `.env` to the desired `sha-<short>` or version tag.
-  5. `just pull-prod` — pulls the new image from GHCR.
-  6. `just up-prod` — recreates containers with the new image.
-  7. Verify: `docker compose ps`, `curl -fsSL https://meta.dmitry.work/api/health`.
+- **Deploy mechanic (GitHub Actions CD — automatic):** deployment runs through the pipeline; no routine manual `pull`/`up`.
+  - Workflow: `.github/workflows/build-push.yml`. The `deploy` job runs after `build-push` succeeds, gated on `github.ref == 'refs/heads/dev'` **or** `workflow_dispatch` (manual re-deploy from the Actions tab). Semver-tag pushes (`v*`) build+push only — they do **not** auto-deploy.
+  - Steps: SCP the repo's `docker-compose.yml` to `DEPLOY_PATH` on the host (server always runs the committed compose), then SSH and run `IMAGE_TAG=dev docker compose pull && docker compose up -d --remove-orphans` (GHCR auth via `GHCR_TOKEN`). The server keeps its own `.env` — it is never copied from CI and never committed.
+  - **Required GitHub Secrets** (Repo → Settings → Secrets and variables → Actions): `DEPLOY_SSH_KEY` (private key of the CI deploy key), `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH` (e.g. `/srv/ebook-meta-helper`), `GHCR_TOKEN` (PAT with `read:packages` for the server-side pull). None live in the repo.
+  - **One-time server prep:** `web` network + shared Traefik up; create `DEPLOY_PATH`; place/maintain the server `.env` there; authorize the CI deploy **public** key in `~/.ssh/authorized_keys` for `DEPLOY_USER`; DNS A-record `meta.dmitry.work` → host.
+  - **Manual deploy / re-deploy:** trigger the workflow via `workflow_dispatch` (Actions tab → Run workflow). Verify after: `curl -fsSL https://meta.dmitry.work/api/health` and the Basic Auth prompt.
 - **Migrations:** `RUN_MIGRATIONS=1` is set in `docker-compose.yml`. On every `api` container start, `docker-entrypoint.sh` runs `alembic upgrade head` before the app process starts. Migrations run against the live database — see IRREVERSIBLE actions below.
 - **Logs:** `just logs-api`, `just logs-watcher`, `just logs-mariadb` (docker compose stdout). No centralised log aggregation configured; retention is Docker's default JSON log driver (rotate as needed with `--log-opt max-size=10m --log-opt max-file=5` if desired).
 - **Database:**
@@ -65,7 +70,7 @@ Single source of truth for environment topology, service endpoints, deploy mecha
   - Credentials: `DB_USER`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `DB_NAME` from `.env` on the server (keep in 1Password or equivalent; never commit).
 - **Access:** SSH to `<DEPLOY_USER>@<PROD_HOST_IP>`. No jump host currently documented; update this section when access method is confirmed.
 - **Backup policy:** No automated backup configured yet. Manual backup: `docker run --rm -v ebook-meta-helper_mariadb_data:/data -v $(pwd):/backup alpine tar czf /backup/mariadb-$(date +%F).tar.gz /data`. Schedule via cron on the host. Target: daily, retain 7 days minimum.
-- **Rollback:** Set `IMAGE_TAG` in `.env` to the previous pinned tag (or the previous `sha-<short>` tag from GHCR), then `just pull-prod && just up-prod`. Time-to-rollback: ~2 minutes (image pull + container restart). Database migrations applied on the previous run are **not** automatically reversed — see IRREVERSIBLE actions.
+- **Rollback (manual override):** the CD job always deploys the `dev` image tag, so rollback is a manual server-side action, not a pipeline action. On the host: set `IMAGE_TAG` in `.env` to a previous `sha-<short>` tag from GHCR, then `docker compose pull && docker compose up -d` (or `just pull-prod && just up-prod`). Alternatively revert the offending commit on `dev` and let CD redeploy. Time-to-rollback: ~2 minutes (image pull + container restart). Database migrations applied on the previous run are **not** automatically reversed — see IRREVERSIBLE actions.
 - **Common breakage modes:**
   - `web` Docker network missing → `docker compose up` fails with "network web declared as external, but could not be found". Fix: `docker network create web`.
   - Traefik stack not running → HTTPS traffic never reaches `api`; Traefik labels are ignored.
@@ -84,3 +89,4 @@ Single source of truth for environment topology, service endpoints, deploy mecha
 
 - 2026-06-05 — DMI-116: filled Local and Production sections; GHCR image delivery; shared Traefik topology documented; server-setup runbook in issue.
 - 2026-06-05 — DMI-116 (amend): added Traefik Basic Auth gate (`ebook-auth` middleware); BASIC_AUTH_USERS env var; noted app is unauthenticated at the application layer.
+- 2026-06-05 — DMI-120: deploy mechanic switched to GitHub Actions CD (deploy job on push to `dev` + `workflow_dispatch`; SCP compose + SSH pull/up); documented required GitHub Secrets + one-time server prep; restored the htpasswd generation + `$$`-escaping instructions that the `.env.example` trim (DMI-119) pointed here but had been lost; rollback clarified as a manual override; `.claude/devops/**` added to `devops_paths` so devops can maintain this file.
