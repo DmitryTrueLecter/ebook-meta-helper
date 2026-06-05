@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.pipeline import scan_cycle, watcher
 from app.pipeline.scan_cycle import run_scan_cycle
+from db.repos import scan_job_repo
 from db.models.directory import Directory
 from db.models.directory_hint import DirectoryHint
 from db.models.enrichment_run import EnrichmentRun, EnrichmentStatus
@@ -82,8 +83,12 @@ def patched_watcher_session(engine: Engine, monkeypatch):
 
 
 def _run_one_watch_iteration(library: Path, factory) -> scan_cycle.CycleResult:
-    """One pass equivalent to a single `run_watcher` tick — without the sleep loop."""
-    return run_scan_cycle(str(library), session_factory=factory)
+    """One pass equivalent to a single `run_watcher` tick — enqueue, claim, run; no sleep loop."""
+    with factory() as session:
+        scan_job_repo.create(session, root_path=str(library))
+        session.flush()
+        job_id = scan_job_repo.claim_next_pending(session).id
+    return run_scan_cycle(job_id, str(library), session_factory=factory)
 
 
 class TestPipelineEndToEnd:

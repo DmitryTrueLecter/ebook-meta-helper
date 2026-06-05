@@ -188,15 +188,26 @@ class TestScanJobStatus:
         status = ScanJobStatus(
             id=5, status="running", files_discovered=100,
             files_processed=42, current_filename="book.epub",
+            error_message=None,
         )
         assert status.files_processed == 42
+        assert status.error_message is None
 
     def test_current_filename_optional(self):
         status = ScanJobStatus(
             id=5, status="finished", files_discovered=100,
             files_processed=100, current_filename=None,
+            error_message=None,
         )
         assert status.current_filename is None
+
+    def test_error_message_carries_failure_reason(self):
+        status = ScanJobStatus(
+            id=5, status="failed", files_discovered=10,
+            files_processed=3, current_filename=None,
+            error_message="scanner crashed",
+        )
+        assert status.error_message == "scanner crashed"
 
 
 class TestPaginatedFiles:

@@ -28,6 +28,7 @@ function makeJob(overrides: Partial<ScanJobStatus> = {}): ScanJobStatus {
     files_discovered: 100,
     files_processed: 25,
     current_filename: 'currently.epub',
+    error_message: null,
     ...overrides,
   }
 }
@@ -247,6 +248,65 @@ describe('ScanPage', () => {
 
     expect(wrapper.find('[data-test="scan-failed-summary"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Scan failed')
+  })
+
+  it('renders the error_message text when status is failed', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    vi.spyOn(api, 'getScanStatus').mockResolvedValue(
+      makeJob({
+        status: 'failed',
+        files_discovered: 10,
+        files_processed: 3,
+        error_message: 'OpenAI 400: Unknown parameter: text.type',
+      }),
+    )
+
+    const wrapper = await mountAtScanRoute()
+    await flushPromises()
+
+    const reason = wrapper.find('[data-test="scan-failed-reason"]')
+    expect(reason.exists()).toBe(true)
+    expect(reason.text()).toContain('OpenAI 400: Unknown parameter: text.type')
+  })
+
+  it('renders a generic fallback when status is failed and error_message is null', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    vi.spyOn(api, 'getScanStatus').mockResolvedValue(
+      makeJob({ status: 'failed', files_discovered: 10, files_processed: 3, error_message: null }),
+    )
+
+    const wrapper = await mountAtScanRoute()
+    await flushPromises()
+
+    const reason = wrapper.find('[data-test="scan-failed-reason"]')
+    expect(reason.exists()).toBe(true)
+    expect(reason.text()).toContain('Scan failed for an unknown reason.')
+  })
+
+  it('renders no failure reason when status is running', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    vi.spyOn(api, 'getScanStatus').mockResolvedValue(
+      makeJob({ status: 'running', error_message: null }),
+    )
+
+    const wrapper = await mountAtScanRoute()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="scan-failed-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="scan-failed-reason"]').exists()).toBe(false)
+  })
+
+  it('renders no failure reason when status is done', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    vi.spyOn(api, 'getScanStatus').mockResolvedValue(
+      makeJob({ status: 'done', files_discovered: 10, files_processed: 10, error_message: null }),
+    )
+
+    const wrapper = await mountAtScanRoute()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="scan-failed-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="scan-failed-reason"]').exists()).toBe(false)
   })
 
   it('polls every 2 seconds while a scan is running', async () => {

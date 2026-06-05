@@ -20,6 +20,7 @@ def _make_job(
     files_discovered: int = 0,
     files_processed: int = 0,
     current_file=None,
+    error_message=None,
 ):
     return SimpleNamespace(
         id=id_,
@@ -27,6 +28,7 @@ def _make_job(
         files_discovered=files_discovered,
         files_processed=files_processed,
         current_file=current_file,
+        error_message=error_message,
     )
 
 
@@ -118,13 +120,26 @@ class TestGetScanStatus:
             files_discovered=10,
             files_processed=3,
             current_file=None,
+            error_message="OpenAI request timed out after 3 retries",
         )
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: None)
         monkeypatch.setattr(routes.scan_job_repo, "find_latest_completed", lambda _s: failed)
 
         response = test_client.get("/api/scan/status")
         assert response.status_code == 200
-        assert response.json()["status"] == "failed"
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["error_message"] == "OpenAI request timed out after 3 retries"
+
+    def test_running_job_has_null_error_message(self, client, monkeypatch):
+        test_client, _ = client
+        job = _make_job(id_=8, status_value=ScanJobStatus.running, error_message=None)
+        monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: job)
+        monkeypatch.setattr(routes.scan_job_repo, "find_latest_completed", lambda _s: None)
+
+        response = test_client.get("/api/scan/status")
+        assert response.status_code == 200
+        assert response.json()["error_message"] is None
 
     def test_returns_null_when_no_jobs_exist(self, client, monkeypatch):
         test_client, _ = client

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.projections import to_scan_status
 from app.api.schemas import (
     DirectoryDetail,
     DirectoryNode,
@@ -16,7 +17,6 @@ from app.api.schemas import (
 )
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
-from db.models.scan_job import ScanJob
 from db.repos import directory_repo, file_repo, metadata_repo, scan_job_repo
 from db.repos.directory_repo import DirectoryStats
 
@@ -68,18 +68,18 @@ def trigger_directory_scan(
             detail=f"Directory {directory_id} not found",
         )
 
-    active = scan_job_repo.get_active(db)
+    active = scan_job_repo.find_active_or_pending(db)
     if active is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Scan job {active.id} is already running",
+            detail=f"Scan job {active.id} is already {active.status.value}",
         )
 
     job = scan_job_repo.create(
         db, root_path=directory.path, root_directory_id=directory.id
     )
     db.commit()
-    return _to_scan_status(job)
+    return to_scan_status(job)
 
 
 def _parse_status_filter(raw: Optional[str]) -> Optional[FileStatus]:
@@ -143,14 +143,4 @@ def _to_list_item(record: FileRecord, has_ai: bool) -> FileListItem:
         status=record.status.value,
         has_ai_suggestion=has_ai,
         sort_order=float(record.sort_order) if record.sort_order is not None else None,
-    )
-
-
-def _to_scan_status(job: ScanJob) -> ScanJobStatus:
-    return ScanJobStatus(
-        id=job.id,
-        status=job.status.value,
-        files_discovered=job.files_discovered,
-        files_processed=job.files_processed,
-        current_filename=None,
     )
