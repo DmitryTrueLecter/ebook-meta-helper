@@ -43,7 +43,20 @@ services:
       - "traefik.http.routers.ebook-meta-helper.rule=Host(`${WEB_DOMAIN}`)"
       - "traefik.http.routers.ebook-meta-helper.entrypoints=websecure"
       - "traefik.http.routers.ebook-meta-helper.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ebook-meta-helper.middlewares=ebook-auth"
       - "traefik.http.services.ebook-meta-helper.loadbalancer.server.port=8000"
+      # Basic-auth gate — credentials sourced from BASIC_AUTH_USERS in .env.
+      # The app itself has NO built-in authentication; this middleware is the
+      # ONLY auth layer. Do not remove it without an alternative gate in place.
+      #
+      # IMPORTANT — $$ escaping rule:
+      #   Compose interpolates the value of BASIC_AUTH_USERS from .env.
+      #   bcrypt hashes contain '$' characters. When writing the hash into .env
+      #   every '$' in the hash must be doubled to '$$' so Compose does not
+      #   treat it as a variable reference.
+      #   Example in .env:  BASIC_AUTH_USERS=admin:$$2y$$05$$...
+      #   The label value delivered to Traefik will contain the single '$'.
+      - "traefik.http.middlewares.ebook-auth.basicauth.users=${BASIC_AUTH_USERS}"
 
   watcher:
     image: ghcr.io/dmitrytruelecter/ebook-meta-helper:${IMAGE_TAG:-latest}

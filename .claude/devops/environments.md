@@ -32,6 +32,7 @@ Single source of truth for environment topology, service endpoints, deploy mecha
 - **Status:** Active.
 - **Host:** Linux server (host details provided by operator; `<PROD_HOST_IP>` placeholder). SSH access via `ssh <DEPLOY_USER>@<PROD_HOST_IP>`.
 - **Domain:** `meta.dmitry.work` (A record → `<PROD_HOST_IP>`; must exist before ACME issues a certificate).
+- **Authentication:** Traefik HTTP Basic Auth middleware `ebook-auth` is applied to the `ebook-meta-helper` router. Credentials are sourced from `BASIC_AUTH_USERS` in the server `.env`. **The app itself has NO built-in authentication** — the Traefik middleware is the ONLY auth layer. Do not bypass or remove it without an alternative gate.
 - **Traefik topology:** A shared Traefik stack (separate `docker-compose.yml`, not part of this repo) runs on the same host. It owns:
   - Ports `80` and `443`.
   - HTTP→HTTPS global redirect (entrypoint `web` → `websecure`).
@@ -39,6 +40,7 @@ Single source of truth for environment topology, service endpoints, deploy mecha
   - `exposedbydefault=false` — services must opt in with `traefik.enable=true`.
   - Docker network: `web` (external, created by the Traefik stack, must exist before `docker compose up`).
   - The app does **not** ship its own Traefik. The `api` container joins the shared `web` network and opts in via labels only.
+  - Basic Auth middleware `ebook-auth` is defined in the app's compose labels and scoped to the `ebook-meta-helper` router.
 - **Services:**
   - `api` — FastAPI + Vue 3 SPA, exposed through Traefik at `https://meta.dmitry.work`. Internal port `8000`. No host port binding (traffic reaches it via the `web` Docker network only).
   - `watcher` — background watcher process; `backend` network only, no public exposure.
@@ -81,3 +83,4 @@ Single source of truth for environment topology, service endpoints, deploy mecha
 ## Update log
 
 - 2026-06-05 — DMI-116: filled Local and Production sections; GHCR image delivery; shared Traefik topology documented; server-setup runbook in issue.
+- 2026-06-05 — DMI-116 (amend): added Traefik Basic Auth gate (`ebook-auth` middleware); BASIC_AUTH_USERS env var; noted app is unauthenticated at the application layer.
