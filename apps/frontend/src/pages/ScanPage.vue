@@ -45,6 +45,15 @@ function isActive(status: ScanJobStatus | null): boolean {
   return status !== null && ACTIVE_STATES.includes(status.status)
 }
 
+const FALLBACK_FAILURE_REASON = 'Scan failed for an unknown reason.'
+
+const failureReason = computed<string>(() => {
+  const message = scanStatus.value?.error_message
+  return message !== null && message !== undefined && message !== ''
+    ? message
+    : FALLBACK_FAILURE_REASON
+})
+
 const progressPercent = computed<number>(() => {
   const status = scanStatus.value
   if (status === null || status.files_discovered === 0) {
@@ -265,14 +274,20 @@ onUnmounted(() => {
           {{ scanStatus.files_discovered }} files processed.
         </p>
 
-        <p
+        <div
           v-else-if="scanStatus.status === 'failed'"
-          class="text-sm text-destructive"
+          class="space-y-1 text-sm text-destructive"
           data-test="scan-failed-summary"
         >
-          Scan failed at file {{ scanStatus.files_processed }} of
-          {{ scanStatus.files_discovered }}.
-        </p>
+          <p>
+            Scan failed at file {{ scanStatus.files_processed }} of
+            {{ scanStatus.files_discovered }}.
+          </p>
+          <pre
+            class="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/50 bg-destructive/10 p-2 font-mono text-xs"
+            data-test="scan-failed-reason"
+          >{{ failureReason }}</pre>
+        </div>
       </section>
     </template>
   </section>
