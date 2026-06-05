@@ -1,0 +1,113 @@
+# Production base. On the server it is started as:
+#   docker compose up -d
+#
+# For local development on Windows, layer the local override on top:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up
+#
+# The `web` network is created externally by the Traefik stack on the prod host.
+# The `backend` network is internal to this stack and is not reachable from Traefik.
+
+services:
+  api:
+    image: ghcr.io/dmitrytruelecter/ebook-meta-helper:${IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      RUN_MIGRATIONS: "1"
+      DB_HOST: mariadb
+      # Container-internal paths: fixed to the volume mount targets below.
+      # Defined here (not in .env) so they can never drift from the mounts —
+      # `environment:` overrides any value in .env. Users set only HOST_* paths.
+      NEW_BOOKS_DIR: /data/new_books
+      BOOKS_READY_DIR: /data/books_ready
+      DEBUG_DIR: /app/debug_logs
+    volumes:
+      - "${HOST_NEW_BOOKS_DIR}:/data/new_books"
+      - "${HOST_BOOKS_READY_DIR}:/data/books_ready"
+      - "${HOST_DEBUG_DIR:-./debug_logs}:/app/debug_logs"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - web
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.ebook-meta-helper.rule=Host(`${WEB_DOMAIN}`)"
+      - "traefik.http.routers.ebook-meta-helper.entrypoints=websecure"
+      - "traefik.http.routers.ebook-meta-helper.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ebook-meta-helper.middlewares=ebook-auth"
+      - "traefik.http.services.ebook-meta-helper.loadbalancer.server.port=8000"
+      # Basic-auth gate — credentials sourced from BASIC_AUTH_USERS in .env.
+      # The app itself has NO built-in authentication; this middleware is the
+      # ONLY auth layer. Do not remove it without an alternative gate in place.
+      #
+      # IMPORTANT — $$ escaping rule:
+      #   Compose interpolates the value of BASIC_AUTH_USERS from .env.
+      #   bcrypt hashes contain '$' characters. When writing the hash into .env
+      #   every '$' in the hash must be doubled to '$$' so Compose does not
+      #   treat it as a variable reference.
+      #   Example in .env:  BASIC_AUTH_USERS=admin:$$2y$$05$$...
+      #   The label value delivered to Traefik will contain the single '$'.
+      - "traefik.http.middlewares.ebook-auth.basicauth.users=${BASIC_AUTH_USERS}"
+
+  watcher:
+    image: ghcr.io/dmitrytruelecter/ebook-meta-helper:${IMAGE_TAG:-latest}
+    command: ["python", "-u", "run_watcher.py"]
+    env_file: .env
+    environment:
+      DB_HOST: mariadb
+      # Container-internal paths — see the api service above.
+      NEW_BOOKS_DIR: /data/new_books
+      BOOKS_READY_DIR: /data/books_ready
+      DEBUG_DIR: /app/debug_logs
+    volumes:
+      - "${HOST_NEW_BOOKS_DIR}:/data/new_books"
+      - "${HOST_BOOKS_READY_DIR}:/data/books_ready"
+      - "${HOST_DEBUG_DIR:-./debug_logs}:/app/debug_logs"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+
+  mariadb:
+    image: mariadb:latest
+    environment:
+      MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD}"
+      MARIADB_DATABASE: "${DB_NAME:-ebook_meta}"
+      MARIADB_USER: "${DB_USER:-ebook}"
+      MARIADB_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p\"$$MARIADB_ROOT_PASSWORD\" --silent"]
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+networks:
+  # Shared with the Traefik stack on the prod host. Must already exist:
+  #   docker network create web
+  web:
+    external: true
+  # Internal-only: mariadb + watcher + api talk to each other here.
+  backend:
+    driver: bridge
+    internal: false  # api needs egress for OpenAI; flip to true if you ever
+                     # move OpenAI calls to a dedicated egress proxy.
+
+volumes:
+  mariadb_data:

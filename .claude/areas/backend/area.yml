@@ -1,0 +1,57 @@
+name: backend
+display_name: Backend
+
+paths:
+  - apps/backend/**
+
+stack:
+  language: Python 3.12
+  framework: FastAPI
+  db: SQLAlchemy 2.0 (sync) + MariaDB + Alembic
+  ai: OpenAI API
+  tests: pytest
+
+test_levels:
+  unit: pytest
+  integration: pytest
+
+structure:
+  - "apps/backend/app/api/        — FastAPI routers, deps, schemas"
+  - "apps/backend/app/pipeline/   — file processing pipeline + watcher"
+  - "apps/backend/app/metadata/   — ebook metadata read/write/clean/merge"
+  - "apps/backend/app/ai/         — AI enrichment (providers, prompts, parsers)"
+  - "apps/backend/app/scanner/    — directory + DB scanner"
+  - "apps/backend/app/models/     — Python dataclass models (BookRecord, PipelineResult)"
+  - "apps/backend/app/naming/     — filename formatting and renaming"
+  - "apps/backend/app/move/       — file moving"
+  - "apps/backend/db/             — SQLAlchemy ORM models, session, repos"
+  - "apps/backend/alembic/        — migrations (never edit by hand)"
+  - "apps/backend/tests/          — pytest test suite"
+
+cross_area:
+  - "DB model changes → update alembic migration"
+  - "new API endpoint → may require frontend service layer update"
+  - "pipeline changes → update docs/IMPLEMENTATION_PLAN.md status"
+
+review_checks:
+  - "No mutable default arguments (def fn(items=[]))"
+  - "No bare except: — require at least except Exception"
+  - "No eval() or exec() on any input"
+  - "Type hints on all public function signatures"
+  - "No raw string interpolation in SQL — use SQLAlchemy constructs"
+  - "No secrets in code — must come from environment variables"
+  - "SQLAlchemy: sync Session only (no async_sessionmaker, AsyncSession, create_async_engine)"
+  - "Every FastAPI endpoint must declare a typed response_model (Pydantic schema)"
+  - "ORM → Pydantic projection must be explicit — no jsonable_encoder(orm_instance)"
+  - "Never create migration files by hand — use alembic revision --autogenerate"
+  - "BE-CONTRACT-001: apps/backend/contract/openapi.json is generated, never hand-edited — must match `python scripts/export_openapi.py` output (grep: a diff touching contract/openapi.json with no corresponding app/api/schemas.py or response_model change)"
+
+guidelines:
+  - Run all commands from apps/backend/ directory (PYTHONPATH resolves app/ and db/ from there).
+  - FastAPI routers in app/api/routes/. Keep routers thin — business logic in services or pipeline.
+  - Pydantic schemas in app/api/schemas.py. Separate request and response models.
+  - DB access through db/repos/. Never query ORM directly from routers.
+  - One SQLAlchemy model per file in db/models/. Update db/models/__init__.py when adding models.
+  - After adding a model run alembic revision --autogenerate -m "description" from apps/backend/.
+  - AI providers implement the base interface in app/ai/base.py.
+  - The committed contract artifact apps/backend/contract/openapi.json is generated, never hand-edited. Regenerate via `python scripts/export_openapi.py` from apps/backend/ after any change to app/api/schemas.py or any response_model.

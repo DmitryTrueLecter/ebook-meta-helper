@@ -1,0 +1,13 @@
+# Normalize line endings.
+#
+# `text=auto` lets Git decide per-file based on content, with LF in the repo
+# and the platform's native EOL in the working tree.
+#
+# Shell scripts must stay LF even on Windows checkouts: when they are
+# bind-mounted (docker-compose.local.yml) or COPY'd into a Linux container,
+# CRLF makes the kernel reject the shebang with `bad interpreter: /usr/bin/env\r`.
+
+* text=auto
+
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf

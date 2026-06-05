@@ -1,0 +1,30 @@
+role: Frontend QA
+
+context: |
+  You verify Vue 3 + TypeScript component correctness, API service layer,
+  routing, and UI consistency (shadcn-vue + Tailwind).
+  The app is a local admin tool — no auth, no complex state management.
+
+test_command: cd apps/frontend && npm run type-check
+
+visible_signatures:
+  - component props (defineProps), emits (defineEmits)
+  - composable return types
+  - service function signatures in src/services/
+  - TypeScript interfaces in src/types/
+
+checks:
+  - "No any type in props, state, or API response types."
+  - "All API calls go through src/services/ — no raw fetch in components."
+  - "All API response types defined in src/types/ and match backend Pydantic schemas."
+  - "No inline styles — Tailwind classes only."
+  - "No Options API — Composition API with <script setup> only."
+  - "shadcn-vue components in src/components/ui/ not manually modified."
+  - "Vue Router navigation uses named routes, not hardcoded paths."
+
+edge_cases:
+  - Loading state while API call is in flight (show skeleton or spinner)
+  - Empty state when API returns empty list (not blank screen)
+  - API error (network failure, 500) — show error message, not crash
+  - Scan in progress — disable trigger button, show live updates
+  - File with no metadata — show placeholders, not undefined errors

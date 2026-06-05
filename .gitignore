@@ -209,3 +209,11 @@ __marimo__/
 .idea
 temp
 debug_logs
+
+docker-compose.override.yml
+
+# Frontend
+apps/frontend/node_modules
+apps/frontend/dist
+.claude/.multi-agent
+.claude/sentinel-inbox

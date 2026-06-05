@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf D:/Work/ebook-meta-helper/.claude/areas/api D:/Work/ebook-meta-helper/.claude/areas/core)",
+      "Bash(mkdir -p D:/Work/ebook-meta-helper/.claude/areas/backend)",
+      "PowerShell(Get-Content *)",
+      "Bash(claude mcp *)",
+      "Read(//home/truelecter/Workdir/Personal/notabenoid/**)",
+      "Bash(readlink agents *)",
+      "mcp__linear__list_projects",
+      "Bash(Get-ChildItem -Path \"D:\\\\Work\\\\ebook-meta-helper\" -Recurse -Depth 3)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(ConvertTo-Json -Depth 10)",
+      "PowerShell(Get-ChildItem -Path \"D:\\\\Work\\\\ebook-meta-helper\" -Recurse -Depth 3 | Select-Object -Property FullName, PSIsContainer | Sort-Object FullName | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR]  $\\($_.FullName\\)\" } else { \"[FILE] $\\($_.FullName\\)\" } })",
+      "Read(//Users/truelecter/repos/test/.claude/**)",
+      "Bash(git ls-remote *)",
+      "Bash(cat .claude/areas/frontend/area.yml)",
+      "Bash(cat .claude/areas/backend/area.yml)",
+      "Bash(git check-ignore *)",
+      "Bash(git --no-pager diff .claude/settings.local.json)",
+      "Bash(git --no-pager log --oneline -1)",
+      "Bash(git -C /home/claude/apps/ebook-meta-helper worktree list)",
+      "Bash(git -C /home/claude/apps/ebook-meta-helper branch --show-current)",
+      "Bash(git worktree *)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "linear"
+  ]
+}

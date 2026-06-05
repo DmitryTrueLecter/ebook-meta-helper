@@ -1,0 +1,45 @@
+{
+  "name": "ebook-meta-helper-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --build --force && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --build --force && vue-tsc --noEmit -p tsconfig.contract.json",
+    "type-check:contract": "vue-tsc --noEmit -p tsconfig.contract.json",
+    "gen:types": "openapi-typescript ../backend/contract/openapi.json -o src/types/generated/openapi.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --fix"
+  },
+  "dependencies": {
+    "@vueuse/core": "^10.11.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-vue-next": "^0.408.0",
+    "radix-vue": "^1.9.2",
+    "tailwind-merge": "^2.4.0",
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "@vitest/coverage-v8": "^1.6.1",
+    "@vue/test-utils": "^2.4.10",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.23.0",
+    "happy-dom": "^14.12.3",
+    "openapi-typescript": "^7.13.0",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "~5.4.5",
+    "vite": "^5.2.8",
+    "vitest": "^1.6.1",
+    "vue-tsc": "^2.0.21"
+  }
+}
