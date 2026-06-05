@@ -433,6 +433,8 @@ export interface components {
         ScanJobProgress: {
             /** Current Filename */
             current_filename: string | null;
+            /** Error Message */
+            error_message: string | null;
             /** Files Discovered */
             files_discovered: number;
             /** Files Processed */

@@ -533,6 +533,17 @@
             ],
             "title": "Current Filename"
           },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
           "files_discovered": {
             "title": "Files Discovered",
             "type": "integer"
@@ -554,7 +565,8 @@
           "status",
           "files_discovered",
           "files_processed",
-          "current_filename"
+          "current_filename",
+          "error_message"
         ],
         "title": "ScanJobProgress",
         "type": "object"
