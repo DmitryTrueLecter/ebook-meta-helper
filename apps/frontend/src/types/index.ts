@@ -73,6 +73,7 @@ export interface ScanJobStatus {
   files_discovered: number
   files_processed: number
   current_filename: string | null
+  error_message: string | null
 }
 
 // JsonValue keeps the MetadataSnapshot.data dict (authors/tags/description/...) typed without `any`.
