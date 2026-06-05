@@ -265,9 +265,17 @@ class TestFileDetail:
         assert detail.ai_metadata is not None
         assert detail.ai_metadata.title == "T"
 
+    def test_status_rejects_value_outside_filestatus_enum(self):
+        with pytest.raises(ValidationError):
+            FileDetail(**self._payload(status="bogus"))
+
 
 class TestEnrichmentTriggerResponse:
     def test_valid_payload(self):
         resp = EnrichmentTriggerResponse(enrichment_run_id=99, file_id=5, status="ai_queued")
         assert resp.enrichment_run_id == 99
         assert resp.status == "ai_queued"
+
+    def test_status_rejects_value_outside_filestatus_enum(self):
+        with pytest.raises(ValidationError):
+            EnrichmentTriggerResponse(enrichment_run_id=99, file_id=5, status="not_a_status")
