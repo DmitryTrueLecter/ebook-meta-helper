@@ -30,6 +30,8 @@ jobs:
 
       - name: Regenerate OpenAPI contract
         working-directory: apps/backend
+        env:
+          PYTHONPATH: "."
         run: python scripts/export_openapi.py
 
       - name: Fail if OpenAPI contract is stale
