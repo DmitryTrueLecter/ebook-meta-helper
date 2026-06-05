@@ -1,11 +1,4 @@
-"""Tests for parse_book_metadata against the live v2 schema contract.
-
-The prompt/parse stack migrated from book_metadata.v1.json to v2 (schema_loader
-loads book_metadata.v2.json). These tests assert the behaviour the shipping
-parser actually produces under v2; the previous v1-era expectations (date
-coercion of `published`, a `range` key on `confidence`) no longer hold because
-v2 encodes those differently. See DMI-111 for the triage record.
-"""
+"""Tests for parse_book_metadata against the live v2 schema contract."""
 
 from app.ai.parse.book_metadata import parse_book_metadata
 

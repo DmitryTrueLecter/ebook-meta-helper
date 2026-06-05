@@ -1,15 +1,4 @@
-"""Tests for the book-metadata prompt builders against the live v2 contract.
-
-The v2 migration split the old single-prompt contract across three functions:
-  - build_system_prompt()  — instructions / extraction rules
-  - build_book_metadata_prompt() — file context + existing metadata
-  - get_response_format()   — the JSON schema (book_metadata.v2.json)
-
-The previous v1 tests asserted all of this lived in one prompt string with
-`Title: X` style labels; v2 derives field labels from schema descriptions and
-moves the JSON contract into get_response_format(). See DMI-111 for the triage
-record.
-"""
+"""Tests for the book-metadata prompt builders against the live v2 contract."""
 
 import json
 

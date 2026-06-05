@@ -48,13 +48,7 @@ class TestRouterWiring:
 
 
 class TestFrontendDirPath:
-    """FRONTEND_DIR always ends in frontend/dist; its anchor adapts to the layout.
-
-    DMI-75 replaced the hardcoded apps/frontend/dist path with _resolve_frontend_dir(),
-    which picks an existing candidate (container vs dev tree) or falls back to
-    parents[2]/frontend/dist when nothing is built — so the grandparent dir is not
-    guaranteed to be "apps". FRONTEND_DIST_DIR overrides the search entirely. See DMI-111.
-    """
+    """FRONTEND_DIR always ends in frontend/dist; its anchor adapts to the layout."""
 
     def test_frontend_dir_ends_in_frontend_dist(self):
         assert FRONTEND_DIR.name == "dist"
