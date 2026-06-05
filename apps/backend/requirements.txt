@@ -1,4 +1,5 @@
 pytest
+jsonschema
 python-dotenv
 ebooklib
 lxml

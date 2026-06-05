@@ -7,6 +7,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from db.models.file_record import FileStatus
+from db.models.scan_job import ScanJobStatus
+
 
 class DirectoryNode(BaseModel):
     """Directory tree node with aggregated file counts and nested children."""
@@ -33,7 +36,7 @@ class FileListItem(BaseModel):
     filename: str
     extension: str | None
     format: str | None
-    status: str
+    status: FileStatus
     has_ai_suggestion: bool
     sort_order: float | None
 
@@ -92,7 +95,7 @@ class FileDetail(BaseModel):
     filename: str
     extension: str | None
     format: str | None
-    status: str
+    status: FileStatus
     sort_order: float | None
     error_message: str | None
     file_metadata: MetadataSnapshot | None
@@ -104,7 +107,7 @@ class EnrichmentTriggerResponse(BaseModel):
 
     enrichment_run_id: int
     file_id: int
-    status: str
+    status: FileStatus
 
 
 class ProcessingLogEntry(BaseModel):
@@ -119,13 +122,13 @@ class ProcessingLogEntry(BaseModel):
     created_at: datetime
 
 
-class ScanJobStatus(BaseModel):
+class ScanJobProgress(BaseModel):
     """Progress snapshot of a scan job."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    status: str
+    status: ScanJobStatus
     files_discovered: int
     files_processed: int
     current_filename: str | None
