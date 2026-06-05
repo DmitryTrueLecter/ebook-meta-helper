@@ -42,7 +42,7 @@ export type DirectoryDetail = Omit<Schemas['DirectoryDetail'], 'files'> & {
   files: FileListItem[]
 }
 
-// Backend model renamed ScanJobStatus → ScanJobProgress (DMI-106); app keeps the original name.
+// Backend schema is named ScanJobProgress; app preserves the original ScanJobStatus name for UI compatibility.
 export type ScanJobStatus = Schemas['ScanJobProgress']
 
 export type MetadataSource = 'file' | 'ai' | 'accepted'
