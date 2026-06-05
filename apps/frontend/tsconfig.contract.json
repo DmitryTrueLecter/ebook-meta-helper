@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["env.d.ts", "src/types/**/*.ts", "src/__tests__/types/**/*.test-d.ts"],
+  "exclude": [],
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "tsBuildInfoFile": null,
+    "noEmit": true,
+    "types": ["vite/client", "vitest/globals"]
+  }
+}

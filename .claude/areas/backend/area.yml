@@ -11,6 +11,10 @@ stack:
   ai: OpenAI API
   tests: pytest
 
+test_levels:
+  unit: pytest
+  integration: pytest
+
 structure:
   - "apps/backend/app/api/        — FastAPI routers, deps, schemas"
   - "apps/backend/app/pipeline/   — file processing pipeline + watcher"
@@ -40,6 +44,7 @@ review_checks:
   - "Every FastAPI endpoint must declare a typed response_model (Pydantic schema)"
   - "ORM → Pydantic projection must be explicit — no jsonable_encoder(orm_instance)"
   - "Never create migration files by hand — use alembic revision --autogenerate"
+  - "BE-CONTRACT-001: apps/backend/contract/openapi.json is generated, never hand-edited — must match `python scripts/export_openapi.py` output (grep: a diff touching contract/openapi.json with no corresponding app/api/schemas.py or response_model change)"
 
 guidelines:
   - Run all commands from apps/backend/ directory (PYTHONPATH resolves app/ and db/ from there).
@@ -49,3 +54,4 @@ guidelines:
   - One SQLAlchemy model per file in db/models/. Update db/models/__init__.py when adding models.
   - After adding a model run alembic revision --autogenerate -m "description" from apps/backend/.
   - AI providers implement the base interface in app/ai/base.py.
+  - The committed contract artifact apps/backend/contract/openapi.json is generated, never hand-edited. Regenerate via `python scripts/export_openapi.py` from apps/backend/ after any change to app/api/schemas.py or any response_model.
