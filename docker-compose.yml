@@ -9,7 +9,7 @@
 
 services:
   api:
-    image: ebook-meta-helper:latest
+    image: ghcr.io/dmitrytruelecter/ebook-meta-helper:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       RUN_MIGRATIONS: "1"
@@ -46,7 +46,7 @@ services:
       - "traefik.http.services.ebook-meta-helper.loadbalancer.server.port=8000"
 
   watcher:
-    image: ebook-meta-helper:latest
+    image: ghcr.io/dmitrytruelecter/ebook-meta-helper:${IMAGE_TAG:-latest}
     command: ["python", "-u", "run_watcher.py"]
     env_file: .env
     environment:

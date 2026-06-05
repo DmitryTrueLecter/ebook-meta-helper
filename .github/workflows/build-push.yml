@@ -1,0 +1,74 @@
+name: Build and push image
+
+# Triggers:
+#   - push to `dev`  → builds and pushes ghcr.io/…:sha-<short> + :dev
+#   - push of a tag  → builds and pushes ghcr.io/…:<tag>       + :latest
+#
+# Required GitHub secrets / variables (set in repo Settings → Secrets and variables):
+#   GITHUB_TOKEN  — automatically provided; used for ghcr.io authentication.
+#                   No extra secret needed.
+#
+# Optional (for a one-step SSH deploy job — see the commented-out job below):
+#   DEPLOY_HOST   — hostname or IP of the production server
+#   DEPLOY_USER   — SSH user on the production server
+#   DEPLOY_KEY    — private SSH key (PEM) — store as a secret
+#   DEPLOY_DIR    — absolute path to the app directory on the server
+#                   (e.g. /srv/ebook-meta-helper)
+
+on:
+  push:
+    branches:
+      - dev
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/ebook-meta-helper
+
+jobs:
+  build-push:
+    name: Build and push to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # needed to push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derive image tags:
+      #   push to dev  → ghcr.io/…:sha-<7-char>  +  ghcr.io/…:dev
+      #   push of tag  → ghcr.io/…:<tag>           +  ghcr.io/…:latest
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
