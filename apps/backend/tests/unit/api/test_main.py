@@ -48,12 +48,24 @@ class TestRouterWiring:
 
 
 class TestFrontendDirPath:
-    """FRONTEND_DIR resolves to apps/frontend/dist relative to the api module location."""
+    """FRONTEND_DIR always ends in frontend/dist; its anchor adapts to the layout.
 
-    def test_frontend_dir_points_at_frontend_dist(self):
+    DMI-75 replaced the hardcoded apps/frontend/dist path with _resolve_frontend_dir(),
+    which picks an existing candidate (container vs dev tree) or falls back to
+    parents[2]/frontend/dist when nothing is built — so the grandparent dir is not
+    guaranteed to be "apps". FRONTEND_DIST_DIR overrides the search entirely. See DMI-111.
+    """
+
+    def test_frontend_dir_ends_in_frontend_dist(self):
         assert FRONTEND_DIR.name == "dist"
         assert FRONTEND_DIR.parent.name == "frontend"
-        assert FRONTEND_DIR.parent.parent.name == "apps"
+
+    def test_env_override_takes_precedence(self, monkeypatch, tmp_path):
+        from app.api.main import _resolve_frontend_dir
+
+        override = tmp_path / "custom" / "dist"
+        monkeypatch.setenv("FRONTEND_DIST_DIR", str(override))
+        assert _resolve_frontend_dir() == override
 
 
 class TestSpaFallback:

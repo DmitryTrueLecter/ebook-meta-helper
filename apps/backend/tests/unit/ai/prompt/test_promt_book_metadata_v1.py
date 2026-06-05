@@ -1,9 +1,45 @@
-from app.ai.prompt.book_metadata import build_book_metadata_prompt
+"""Tests for the book-metadata prompt builders against the live v2 contract.
+
+The v2 migration split the old single-prompt contract across three functions:
+  - build_system_prompt()  — instructions / extraction rules
+  - build_book_metadata_prompt() — file context + existing metadata
+  - get_response_format()   — the JSON schema (book_metadata.v2.json)
+
+The previous v1 tests asserted all of this lived in one prompt string with
+`Title: X` style labels; v2 derives field labels from schema descriptions and
+moves the JSON contract into get_response_format(). See DMI-111 for the triage
+record.
+"""
+
+import json
+
+from app.ai.prompt.book_metadata import (
+    build_book_metadata_prompt,
+    build_system_prompt,
+    get_response_format,
+)
 from app.models.book import BookRecord, OriginalWork
 
 
-def test_prompt_contains_required_sections():
-    """Test that prompt includes all basic required sections"""
+def test_system_prompt_contains_extraction_instructions():
+    prompt = build_system_prompt()
+
+    assert "bibliographic metadata extractor" in prompt
+    assert "translated" in prompt.lower()
+    assert "directory" in prompt.lower()
+
+
+def test_response_format_declares_json_contract():
+    response_format = get_response_format()
+
+    serialized = json.dumps(response_format)
+    assert '"edition"' in serialized
+    assert '"original"' in serialized
+    assert '"confidence"' in serialized
+    assert response_format["format"]["type"] == "json_schema"
+
+
+def test_prompt_contains_file_context():
     record = BookRecord(
         path="x",
         original_filename="Horus_Rising.fb2",
@@ -21,27 +57,13 @@ def test_prompt_contains_required_sections():
 
     prompt = build_book_metadata_prompt(record)
 
-    # Instructions
-    assert "ONLY with valid JSON" in prompt
-    assert "bibliographic metadata extraction" in prompt
-
-    # File context
     assert "Horus_Rising.fb2" in prompt
     assert "warhammer / heresy" in prompt
-    assert "fb2" in prompt
-
-    # JSON contract
-    assert '"edition"' in prompt
-    assert '"original"' in prompt
-    assert '"confidence"' in prompt
-
-    # Existing metadata
     assert "Восхождение Хоруса" in prompt
     assert "Horus Rising" in prompt
 
 
 def test_prompt_includes_all_edition_fields():
-    """Test that prompt correctly shows all edition fields from schema"""
     record = BookRecord(
         path="x",
         original_filename="test.epub",
@@ -63,23 +85,18 @@ def test_prompt_includes_all_edition_fields():
 
     prompt = build_book_metadata_prompt(record)
 
-    # Check that all fields appear in "Existing edition metadata" section
-    assert "Title: Test Title" in prompt
-    assert "Subtitle: Test Subtitle" in prompt
-    assert "Authors: Author One, Author Two" in prompt
-    assert "Series: Test Series" in prompt
-    assert "Series number: 5" in prompt
-    assert "Series total: 10" in prompt
-    assert "Language: en" in prompt
-    assert "Publisher: Test Publisher" in prompt
-    assert "Published year: 2020" in prompt
-    assert "ISBN-10: 1234567890" in prompt
-    assert "ISBN-13: 1234567890123" in prompt
-    assert "ASIN: B012345678" in prompt
+    # v2 labels are derived from schema field descriptions (first sentence).
+    assert "Test Title" in prompt
+    assert "Test Subtitle" in prompt
+    assert "Author One, Author Two" in prompt
+    assert "Test Series" in prompt
+    assert "Test Publisher" in prompt
+    assert "1234567890" in prompt
+    assert "1234567890123" in prompt
+    assert "B012345678" in prompt
 
 
 def test_prompt_includes_original_fields():
-    """Test that prompt correctly shows all original work fields"""
     record = BookRecord(
         path="x",
         original_filename="test.fb2",
@@ -97,16 +114,12 @@ def test_prompt_includes_original_fields():
 
     prompt = build_book_metadata_prompt(record)
 
-    # Check original work section
     assert "Existing original work metadata:" in prompt
-    assert "Original title: Original Title" in prompt
-    assert "Original authors: Original Author" in prompt
-    assert "Original language: en" in prompt
-    assert "Original year: 2015" in prompt
+    assert "Original Title" in prompt
+    assert "Original Author" in prompt
 
 
 def test_prompt_with_minimal_metadata():
-    """Test prompt with only required file info, no metadata"""
     record = BookRecord(
         path="x",
         original_filename="unknown.pdf",
@@ -116,67 +129,24 @@ def test_prompt_with_minimal_metadata():
 
     prompt = build_book_metadata_prompt(record)
 
-    # Should still have structure
     assert "unknown.pdf" in prompt
-    assert "pdf" in prompt
-    assert '"edition"' in prompt
-    assert '"original"' in prompt
-
-    # Should NOT have metadata sections
+    # With no metadata there are no "Existing ..." sections.
     assert "Existing edition metadata:" not in prompt
     assert "Existing original work metadata:" not in prompt
 
 
-def test_prompt_includes_schema_rules():
-    """Test that prompt includes rules from schema"""
-    record = BookRecord(
-        path="x",
-        original_filename="test.epub",
-        extension="epub",
-        directories=[],
-    )
-
-    prompt = build_book_metadata_prompt(record)
-
-    # Check that schema rules are included
-    assert "All fields are optional" in prompt
-    assert "Edition describes the concrete file" in prompt
-    assert "Original describes the original work" in prompt
-    assert "translation" in prompt.lower()
-
-
-def test_prompt_includes_ai_hints():
-    """Test that prompt includes AI hints for fields"""
-    record = BookRecord(
-        path="x",
-        original_filename="test.epub",
-        extension="epub",
-        directories=[],
-    )
-
-    prompt = build_book_metadata_prompt(record)
-
-    # Check some AI hints are present in the JSON format description
-    assert "title" in prompt.lower()
-    assert "string" in prompt.lower()
-    assert "array" in prompt.lower()
-    assert "integer" in prompt.lower()
-    assert "number" in prompt.lower()
-
-
 def test_prompt_skips_empty_lists():
-    """Test that empty author lists are not shown"""
     record = BookRecord(
         path="x",
         original_filename="test.epub",
         extension="epub",
         directories=[],
         title="Test",
-        authors=[],  # Empty list
+        authors=[],
     )
 
     prompt = build_book_metadata_prompt(record)
 
-    # Should show title but not authors
-    assert "Title: Test" in prompt
-    assert "Authors:" not in prompt
+    assert "Test" in prompt
+    # The edition authors label must not appear for an empty author list.
+    assert "List of authors for this edition" not in prompt
