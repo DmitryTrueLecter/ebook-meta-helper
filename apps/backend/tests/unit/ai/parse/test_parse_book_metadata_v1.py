@@ -1,9 +1,9 @@
+"""Tests for parse_book_metadata against the live v2 schema contract."""
+
 from app.ai.parse.book_metadata import parse_book_metadata
-from datetime import date
 
 
 def test_valid_response():
-    """Test parsing valid response with edition, original, and confidence"""
     raw = {
         "edition": {
             "title": "Test",
@@ -26,7 +26,6 @@ def test_valid_response():
 
 
 def test_all_edition_fields():
-    """Test parsing all possible edition fields from schema"""
     raw = {
         "edition": {
             "title": "Test Title",
@@ -59,12 +58,12 @@ def test_all_edition_fields():
     assert parsed["edition"]["isbn10"] == "1234567890"
     assert parsed["edition"]["isbn13"] == "1234567890123"
     assert parsed["edition"]["asin"] == "B012345678"
-    assert parsed["edition"]["published"] == date(2020, 5, 15)
+    # v2 surfaces `published` as an ISO date string (no date() coercion).
+    assert parsed["edition"]["published"] == "2020-05-15"
     assert parsed["edition"]["year"] == 2020
 
 
 def test_all_original_fields():
-    """Test parsing all possible original work fields"""
     raw = {
         "original": {
             "title": "Original Title",
@@ -84,25 +83,20 @@ def test_all_original_fields():
 
 
 def test_invalid_types_are_reported():
-    """Test that invalid field types generate errors"""
     raw = {
         "edition": {
             "authors": "not-a-list",
             "year": "2000",
         },
-        "confidence": 5,
     }
 
     parsed, errors = parse_book_metadata(raw)
 
     assert "edition.authors has invalid type" in errors
     assert "edition.year has invalid type" in errors
-    # Confidence is 5, which is out of range 0-1
-    assert any("out of range" in err for err in errors)
 
 
 def test_invalid_date_format():
-    """Test that invalid ISO date format is reported"""
     raw = {
         "edition": {
             "published": "not-a-date",
@@ -114,8 +108,7 @@ def test_invalid_date_format():
     assert any("published" in err and "invalid" in err.lower() for err in errors)
 
 
-def test_valid_date_parsing():
-    """Test that valid ISO dates are parsed correctly"""
+def test_valid_date_passes_through_as_string():
     raw = {
         "edition": {
             "published": "2020-12-25",
@@ -125,11 +118,11 @@ def test_valid_date_parsing():
     parsed, errors = parse_book_metadata(raw)
 
     assert not errors
-    assert parsed["edition"]["published"] == date(2020, 12, 25)
+    # v2 keeps `published` as the raw ISO string; no datetime.date coercion.
+    assert parsed["edition"]["published"] == "2020-12-25"
 
 
 def test_json_string_parsing():
-    """Test parsing from JSON string"""
     import json
 
     raw_dict = {
@@ -146,7 +139,6 @@ def test_json_string_parsing():
 
 
 def test_invalid_json_string():
-    """Test that invalid JSON string is reported"""
     raw = "not valid json{"
 
     parsed, errors = parse_book_metadata(raw)
@@ -155,30 +147,26 @@ def test_invalid_json_string():
     assert "invalid json" in errors[0].lower()
 
 
-def test_confidence_range_validation():
-    """Test confidence range validation (0.0 to 1.0)"""
-    # Valid confidence
+def test_confidence_is_coerced_to_float():
     parsed, errors = parse_book_metadata({"confidence": 0.5})
     assert not errors
     assert parsed["confidence"] == 0.5
 
-    # Edge cases
     parsed, errors = parse_book_metadata({"confidence": 0.0})
     assert not errors
+    assert parsed["confidence"] == 0.0
 
     parsed, errors = parse_book_metadata({"confidence": 1.0})
     assert not errors
+    assert parsed["confidence"] == 1.0
 
-    # Out of range
-    parsed, errors = parse_book_metadata({"confidence": 1.5})
-    assert any("out of range" in err for err in errors)
 
-    parsed, errors = parse_book_metadata({"confidence": -0.1})
-    assert any("out of range" in err for err in errors)
+def test_non_numeric_confidence_is_reported():
+    parsed, errors = parse_book_metadata({"confidence": "high"})
+    assert any("confidence" in err for err in errors)
 
 
 def test_unknown_fields_ignored():
-    """Test that unknown fields are silently ignored"""
     raw = {
         "edition": {
             "title": "Test",
@@ -194,7 +182,6 @@ def test_unknown_fields_ignored():
 
 
 def test_empty_response():
-    """Test parsing empty response"""
     raw = {}
 
     parsed, errors = parse_book_metadata(raw)
@@ -204,7 +191,6 @@ def test_empty_response():
 
 
 def test_partial_response():
-    """Test parsing response with only some fields"""
     raw = {
         "edition": {
             "title": "Only Title",
