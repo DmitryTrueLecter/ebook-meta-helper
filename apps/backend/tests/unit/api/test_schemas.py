@@ -15,7 +15,7 @@ from app.api.schemas import (
     MetadataSnapshot,
     PaginatedFiles,
     ProcessingLogEntry,
-    ScanJobStatus,
+    ScanJobProgress,
 )
 
 
@@ -93,6 +93,13 @@ class TestFileListItem:
             status="pending", has_ai_suggestion=False, sort_order=None,
         )
         assert item.extension is None
+
+    def test_status_rejects_value_outside_filestatus_enum(self):
+        with pytest.raises(ValidationError):
+            FileListItem(
+                id=1, filename="x.epub", extension="epub", format="EPUB",
+                status="bogus", has_ai_suggestion=False, sort_order=None,
+            )
 
 
 class TestDirectoryDetail:
@@ -183,9 +190,9 @@ class TestProcessingLogEntry:
         assert entry.duration_ms is None
 
 
-class TestScanJobStatus:
+class TestScanJobProgress:
     def test_valid_payload(self):
-        status = ScanJobStatus(
+        status = ScanJobProgress(
             id=5, status="running", files_discovered=100,
             files_processed=42, current_filename="book.epub",
             error_message=None,
@@ -194,20 +201,28 @@ class TestScanJobStatus:
         assert status.error_message is None
 
     def test_current_filename_optional(self):
-        status = ScanJobStatus(
-            id=5, status="finished", files_discovered=100,
+        status = ScanJobProgress(
+            id=5, status="done", files_discovered=100,
             files_processed=100, current_filename=None,
             error_message=None,
         )
         assert status.current_filename is None
 
     def test_error_message_carries_failure_reason(self):
-        status = ScanJobStatus(
+        status = ScanJobProgress(
             id=5, status="failed", files_discovered=10,
             files_processed=3, current_filename=None,
             error_message="scanner crashed",
         )
         assert status.error_message == "scanner crashed"
+
+    def test_status_rejects_value_outside_enum(self):
+        with pytest.raises(ValidationError):
+            ScanJobProgress(
+                id=5, status="finished", files_discovered=0,
+                files_processed=0, current_filename=None,
+                error_message=None,
+            )
 
 
 class TestPaginatedFiles:
