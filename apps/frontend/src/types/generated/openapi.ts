@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * List Directory Tree
-         * @description Full directory tree rooted at every depth-0 row, with per-directory counts.
+         * @description Directory tree with per-directory counts; archived (`missing`) directories hidden unless `include_missing`.
          */
         get: operations["list_directory_tree_api_directories_get"];
         put?: never;
@@ -44,7 +44,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/directories/{directory_id}/scan": {
+    "/api/directories/{directory_id}/discover": {
         parameters: {
             query?: never;
             header?: never;
@@ -54,10 +54,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Trigger Directory Scan
-         * @description Enqueue a scan + enrichment job for the directory; watcher picks up `pending` rows.
+         * Trigger Directory Discover
+         * @description Enqueue a discover job (FS↔DB sync + read file metadata, NO AI); watcher runs it.
          */
-        post: operations["trigger_directory_scan_api_directories__directory_id__scan_post"];
+        post: operations["trigger_directory_discover_api_directories__directory_id__discover_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -288,13 +288,21 @@ export interface components {
             file_count: number;
             /** Id */
             id: number;
+            /** Missing Count */
+            missing_count: number;
             /** Name */
             name: string;
             /** Path */
             path: string;
             /** Pending Count */
             pending_count: number;
+            status: components["schemas"]["DirectoryStatus"];
         };
+        /**
+         * DirectoryStatus
+         * @enum {string}
+         */
+        DirectoryStatus: "active" | "missing";
         /**
          * EnrichmentTriggerResponse
          * @description 202 response from POST /api/files/{id}/enrich — exposes the new run id.
@@ -352,7 +360,7 @@ export interface components {
          * FileStatus
          * @enum {string}
          */
-        FileStatus: "pending" | "reading" | "ai_queued" | "enriching" | "enriched" | "accepted" | "rejected" | "failed";
+        FileStatus: "pending" | "reading" | "read" | "ai_queued" | "analyze_queued" | "enriching" | "enriched" | "accepted" | "rejected" | "failed" | "missing";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -472,7 +480,9 @@ export type $defs = Record<string, never>;
 export interface operations {
     list_directory_tree_api_directories_get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_missing?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -486,6 +496,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DirectoryNode"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -523,7 +542,7 @@ export interface operations {
             };
         };
     };
-    trigger_directory_scan_api_directories__directory_id__scan_post: {
+    trigger_directory_discover_api_directories__directory_id__discover_post: {
         parameters: {
             query?: never;
             header?: never;

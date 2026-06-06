@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import DirectoryTreeNode from '@/components/DirectoryTreeNode.vue'
-import { listDirectories } from '@/services/api'
+import { listDirectories, listDirectoriesIncludingMissing } from '@/services/api'
 import type { DirectoryNode } from '@/types'
 
 const directories = ref<DirectoryNode[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
+const showMissing = ref(false)
 
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = null
   try {
-    directories.value = await listDirectories()
+    directories.value = showMissing.value
+      ? await listDirectoriesIncludingMissing()
+      : await listDirectories()
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -22,6 +25,7 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
+watch(showMissing, load)
 </script>
 
 <template>
@@ -29,9 +33,15 @@ onMounted(load)
     <header class="space-y-1">
       <h1 class="text-2xl font-bold tracking-tight">Directories</h1>
       <p class="text-muted-foreground">
-        Browse scanned directories. Click a directory to view its files, or trigger a scan.
+        Browse directories. Click a directory to view its files, or run Discover to find and
+        refresh its files.
       </p>
     </header>
+
+    <label class="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+      <input v-model="showMissing" type="checkbox" class="h-4 w-4" />
+      Show missing directories
+    </label>
 
     <div v-if="loading" class="flex items-center gap-2 text-muted-foreground">
       <Loader2 class="h-4 w-4 animate-spin" />
@@ -46,7 +56,7 @@ onMounted(load)
     </div>
 
     <div v-else-if="directories.length === 0" class="text-muted-foreground">
-      No directories yet. Run a scan to discover them.
+      No directories yet. Run Discover to find them.
     </div>
 
     <ul v-else class="space-y-1">
@@ -54,6 +64,7 @@ onMounted(load)
         v-for="node in directories"
         :key="node.id"
         :node="node"
+        :show-missing="showMissing"
       />
     </ul>
   </section>

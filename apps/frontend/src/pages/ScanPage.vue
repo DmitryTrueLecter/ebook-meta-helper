@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Loader2, ScanLine } from 'lucide-vue-next'
+import { Loader2, RefreshCw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
+  discoverDirectory,
   getScanStatus,
   listDirectories,
-  triggerDirectoryScan,
 } from '@/services/api'
 import type { DirectoryNode, ScanJobState, ScanJobStatus } from '@/types'
 
@@ -105,16 +105,16 @@ function startPolling(): void {
   }, POLL_INTERVAL_MS)
 }
 
-async function startScan(): Promise<void> {
+async function startDiscover(): Promise<void> {
   const id = selectedDirectoryId.value
   if (id === null) {
-    startError.value = 'Select a directory to scan.'
+    startError.value = 'Select a directory to discover.'
     return
   }
   starting.value = true
   startError.value = null
   try {
-    scanStatus.value = await triggerDirectoryScan(id)
+    scanStatus.value = await discoverDirectory(id)
     if (isActive(scanStatus.value)) {
       startPolling()
     }
@@ -150,9 +150,9 @@ onUnmounted(() => {
 <template>
   <section class="space-y-6">
     <header class="space-y-1">
-      <h1 class="text-2xl font-bold tracking-tight">Scan</h1>
+      <h1 class="text-2xl font-bold tracking-tight">Discover</h1>
       <p class="text-muted-foreground">
-        Trigger a directory scan and watch progress in real time.
+        Discover a directory — find and refresh its files (no AI) — and watch progress in real time.
       </p>
     </header>
 
@@ -173,7 +173,7 @@ onUnmounted(() => {
         aria-labelledby="scan-launcher-heading"
         class="space-y-3 rounded-md border p-4"
       >
-        <h2 id="scan-launcher-heading" class="text-lg font-semibold">Scan directory</h2>
+        <h2 id="scan-launcher-heading" class="text-lg font-semibold">Discover directory</h2>
 
         <div class="flex flex-wrap items-center gap-3">
           <label for="scan-directory" class="text-sm font-medium">Directory</label>
@@ -192,16 +192,16 @@ onUnmounted(() => {
           <Button
             type="button"
             :disabled="selectedDirectoryId === null || starting"
-            @click="startScan"
+            @click="startDiscover"
           >
             <Loader2 v-if="starting" class="mr-1 h-3.5 w-3.5 animate-spin" />
-            <ScanLine v-else class="mr-1 h-3.5 w-3.5" />
-            Start Scan
+            <RefreshCw v-else class="mr-1 h-3.5 w-3.5" />
+            Start Discover
           </Button>
         </div>
 
         <p v-if="directories.length === 0" class="text-sm text-muted-foreground">
-          No directories discovered yet. Add a directory before scanning.
+          No directories yet. Add a directory before running Discover.
         </p>
 
         <p v-if="startError" class="text-sm text-destructive">{{ startError }}</p>
