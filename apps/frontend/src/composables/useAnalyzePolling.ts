@@ -1,9 +1,9 @@
-import { computed, readonly, ref } from 'vue'
+import { readonly, ref } from 'vue'
 
 import { enrichFile, getFileDetail } from '@/services/api'
 import type { FileDetail, FileStatus } from '@/types'
 
-// Statuses at which polling stops: the analyze run has settled (or the file is gone).
+// Terminal statuses for an analyze run (success, failure, user decision, or file gone).
 const SETTLED_STATUSES = new Set<FileStatus>([
   'enriched',
   'failed',
@@ -39,7 +39,7 @@ export function useAnalyzePolling(
   const error = ref<string | null>(null)
   let timer: ReturnType<typeof setTimeout> | null = null
 
-  const isAnalyzing = computed(() => analyzing.value)
+  const isAnalyzing = readonly(analyzing)
 
   function clearTimer(): void {
     if (timer !== null) {
@@ -65,12 +65,16 @@ export function useAnalyzePolling(
       return
     }
     onDetail(detail)
-    if (isAnalyzeSettled(detail.status)) {
-      analyzing.value = false
-      clearTimer()
+    if (isAnalyzeInFlight(detail.status)) {
+      scheduleNextPoll(fileId)
       return
     }
-    scheduleNextPoll(fileId)
+    // A non-in-flight, non-settled status (e.g. job rolled back to `read`) is unexpected — surface it so the loop ends instead of hanging.
+    if (!isAnalyzeSettled(detail.status)) {
+      error.value = `Analyze run ended in unexpected status "${detail.status}".`
+    }
+    analyzing.value = false
+    clearTimer()
   }
 
   async function startAnalyze(fileId: number): Promise<void> {

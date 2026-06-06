@@ -123,6 +123,23 @@ describe('useAnalyzePolling', () => {
     expect(detailSpy).toHaveBeenCalledTimes(1)
   })
 
+  it.each<FileStatus>(['pending', 'reading', 'read'])(
+    'halts and surfaces an error when a poll rolls back to %s',
+    async (rolledBackStatus) => {
+      vi.spyOn(api, 'enrichFile').mockResolvedValue(enrichResponse('analyze_queued'))
+      const detailSpy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(detail(rolledBackStatus))
+
+      const polling = useAnalyzePolling(() => {}, { pollIntervalMs: 1000 })
+      await polling.startAnalyze(7)
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(polling.isAnalyzing.value).toBe(false)
+      expect(polling.error.value).toContain(rolledBackStatus)
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(detailSpy).toHaveBeenCalledTimes(1)
+    },
+  )
+
   it('records the error and does not poll when enrich rejects', async () => {
     vi.spyOn(api, 'enrichFile').mockRejectedValue(new Error('queue down'))
     const detailSpy = vi.spyOn(api, 'getFileDetail').mockResolvedValue(detail('enriched', true))
