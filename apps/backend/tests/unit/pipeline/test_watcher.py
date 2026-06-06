@@ -3,14 +3,25 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.models.book import BookRecord
 from app.pipeline import scan_cycle, watcher
 from app.pipeline.scan_cycle import CycleResult
+
+
+def _zero_cycle(job_id: int) -> CycleResult:
+    """An all-zero discover result — the shape `run_scan_cycle` returns on an idle tick."""
+    return CycleResult(
+        scan_job_id=job_id,
+        files_discovered=0,
+        files_read=0,
+        files_failed=0,
+        files_marked_missing=0,
+        directories_deleted=0,
+        directories_archived=0,
+    )
 from db.base import Base
 import db.models  # noqa: F401 — register all models with Base.metadata
 from db.models.directory import Directory
@@ -138,9 +149,7 @@ class TestLoopBody:
             if len(cycle_calls) >= 2:
                 # break out of the infinite loop after two ticks
                 raise KeyboardInterrupt
-            return CycleResult(
-                scan_job_id=job_id, files_discovered=0, files_processed=0, files_failed=0
-            )
+            return _zero_cycle(job_id)
 
         with patch("app.pipeline.watcher.load_dotenv", return_value=None), patch(
             "app.pipeline.watcher.run_scan_cycle", side_effect=fake_cycle
@@ -214,29 +223,14 @@ def _make_book_tree(tmp_path):
     return root
 
 
-def _stub_provider():
-    provider = MagicMock()
-    provider.summarize_directory.return_value = {
-        "series_name": "S",
-        "universe": None,
-        "genre": "scifi",
-        "tags": [],
-        "language": "en",
-        "confidence": 0.5,
-        "notes": None,
-    }
-    return provider
-
-
 class TestPendingJobConsumption:
     def test_pending_job_picked_up_and_run_to_done_on_same_id(
-        self, tmp_path, shared_db, monkeypatch
+        self, tmp_path, shared_db
     ):
         engine, Maker, factory = shared_db
         root = _make_book_tree(tmp_path)
-        monkeypatch.setenv("AI_PROVIDER", "fake")
 
-        # API-style: a pending job already exists for this root_path.
+        # API-style: a pending discover job already exists for this root_path.
         with Maker() as s:
             job = scan_job_repo.create(s, root_path=str(root))
             s.commit()
@@ -244,16 +238,18 @@ class TestPendingJobConsumption:
 
         observed_status_during: list = []
 
-        def _spy_enrich(record, provider_name, directory_hint=None):
+        def _spy_read(record):
             with Maker() as s:
                 active = scan_job_repo.find_active_or_pending(s)
                 observed_status_during.append((active.id, active.status))
-            record.source = "ai"
             return record
 
-        with patch("app.pipeline.scan_cycle.get_provider", return_value=_stub_provider()), patch(
-            "app.pipeline.process_file.read_metadata", side_effect=lambda r: r
-        ), patch("app.pipeline.process_file.enrich", side_effect=_spy_enrich):
+        with patch(
+            "app.pipeline.process_file.read_metadata", side_effect=_spy_read
+        ), patch(
+            "app.pipeline.process_file.enrich",
+            side_effect=AssertionError("discover must not enrich"),
+        ):
             watcher._run_one_iteration(str(root))
 
         # Same job id ran while in running state, observable via find_active_or_pending.
@@ -266,52 +262,44 @@ class TestPendingJobConsumption:
             assert final.started_at is not None
             assert final.finished_at is not None
             assert final.files_discovered == 1
-            assert final.files_processed == 1
             # no second job was created — the API's job is the one that ran
             assert s.query(ScanJob).count() == 1
 
-    def test_failing_job_marked_failed_on_same_id(self, tmp_path, shared_db, monkeypatch):
+    def test_failing_walk_marks_job_failed_on_same_id(self, tmp_path, shared_db):
         engine, Maker, factory = shared_db
         root = _make_book_tree(tmp_path)
-        monkeypatch.setenv("AI_PROVIDER", "fake")
 
         with Maker() as s:
             job = scan_job_repo.create(s, root_path=str(root))
             s.commit()
             job_id = job.id
 
-        provider = MagicMock()
-        provider.summarize_directory.side_effect = RuntimeError("OpenAI outage")
-
-        with patch("app.pipeline.scan_cycle.get_provider", return_value=provider), patch(
-            "app.pipeline.process_file.read_metadata", side_effect=lambda r: r
+        with patch(
+            "app.pipeline.scan_cycle.DBScanner", side_effect=RuntimeError("walk exploded")
         ):
             # the loop swallows it; call the iteration directly to assert the raise path
-            with pytest.raises(RuntimeError, match="OpenAI outage"):
+            with pytest.raises(RuntimeError, match="walk exploded"):
                 watcher._run_one_iteration(str(root))
 
         with Maker() as s:
             final = s.get(ScanJob, job_id)
             assert final.status == ScanJobStatus.failed
-            assert "OpenAI outage" in final.error_message
+            assert "walk exploded" in final.error_message
             assert s.query(ScanJob).count() == 1
 
-    def test_idle_iteration_enqueues_new_books_sweep_job(self, shared_db, monkeypatch):
+    def test_idle_iteration_enqueues_new_books_sweep_discover_job(self, shared_db):
         engine, Maker, factory = shared_db
-        monkeypatch.setenv("AI_PROVIDER", "fake")
 
         captured_root: list = []
 
         def fake_cycle(job_id, root):
             captured_root.append((job_id, root))
-            return CycleResult(
-                scan_job_id=job_id, files_discovered=0, files_processed=0, files_failed=0
-            )
+            return _zero_cycle(job_id)
 
         with patch("app.pipeline.watcher.run_scan_cycle", side_effect=fake_cycle):
             watcher._run_one_iteration("/new-books")
 
-        # No pending job existed, so a NEW_BOOKS_DIR sweep job was created, claimed, and run.
+        # No pending job existed, so a NEW_BOOKS_DIR sweep discover job was created, claimed, run.
         assert len(captured_root) == 1
         job_id, root = captured_root[0]
         assert root == "/new-books"

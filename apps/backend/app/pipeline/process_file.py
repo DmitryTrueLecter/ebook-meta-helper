@@ -6,7 +6,7 @@ import os
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,7 @@ from db.repos.metadata_repo import MetadataInput, MetadataScalars
 @dataclass(frozen=True)
 class _StepContext:
     file_id: int
-    enrichment_run_id: int
+    enrichment_run_id: Optional[int]
     session: Session
 
 
@@ -47,6 +47,48 @@ def process_file(
         return after_reading
 
     return _run_enriching(after_reading.record, directory_hint, ctx)
+
+
+def read_file_metadata(
+    record: BookRecord,
+    file_id: int,
+    session: Session,
+) -> PipelineResult:
+    """Discover read: read metadata FROM the file (NO AI), persist the `file` snapshot, land `read`."""
+    ctx = _StepContext(file_id=file_id, enrichment_run_id=None, session=session)
+    file_repo.update_status(ctx.session, ctx.file_id, FileStatus.reading)
+
+    try:
+        read_result = read_metadata(record)
+        cleaned = clean_record(read_result)
+    except Exception as exc:
+        return _fail(ctx, ProcessingStep.read_metadata, exc)
+
+    try:
+        metadata_repo.create(
+            ctx.session,
+            MetadataInput(
+                file_id=ctx.file_id,
+                source=MetadataSource.file,
+                data=_record_to_data(cleaned),
+                scalars=_record_to_scalars(cleaned),
+            ),
+        )
+        file_repo.update_status(ctx.session, ctx.file_id, FileStatus.read)
+        log_repo.write(
+            ctx.session,
+            LogEntry(
+                file_id=ctx.file_id,
+                step=ProcessingStep.read_metadata,
+                level=ProcessingLogLevel.info,
+                message="file metadata read and stored",
+            ),
+        )
+        ctx.session.commit()
+    except Exception as exc:
+        return _fail(ctx, ProcessingStep.read_metadata, exc)
+
+    return PipelineResult(success=True, record=cleaned)
 
 
 def _run_reading(record: BookRecord, ctx: _StepContext) -> PipelineResult:

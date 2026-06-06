@@ -74,13 +74,21 @@ def _reset_stalled_on_startup() -> int:
 
 
 def _report_cycle(result: CycleResult) -> None:
-    if result.files_discovered == 0:
+    if (
+        result.files_discovered == 0
+        and result.files_marked_missing == 0
+        and result.directories_deleted == 0
+        and result.directories_archived == 0
+    ):
         return
     print(
-        f"[watcher] scan_job={result.scan_job_id} "
+        f"[watcher] discover scan_job={result.scan_job_id} "
         f"discovered={result.files_discovered} "
-        f"processed={result.files_processed} "
-        f"failed={result.files_failed}"
+        f"read={result.files_read} "
+        f"failed={result.files_failed} "
+        f"missing={result.files_marked_missing} "
+        f"dirs_deleted={result.directories_deleted} "
+        f"dirs_archived={result.directories_archived}"
     )
 
 

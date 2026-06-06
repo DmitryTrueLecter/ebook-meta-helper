@@ -51,7 +51,7 @@ class TestListDirectoryTree:
         root = _make_directory(1, "root", "/lib", 0, parent_id=None, children=[child])
         orphan = _make_directory(3, "orphan", "/other", 0, parent_id=None, children=[])
 
-        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s: [root, child, orphan])
+        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s, include_missing=False: [root, child, orphan])
         monkeypatch.setattr(
             routes.directory_repo, "get_status_counts",
             lambda _s: {
@@ -75,7 +75,7 @@ class TestListDirectoryTree:
         test_client, _ = client
         root = _make_directory(1, "root", "/lib", 0, parent_id=None, children=[])
 
-        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s: [root])
+        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s, include_missing=False: [root])
         monkeypatch.setattr(routes.directory_repo, "get_status_counts", lambda _s: {})
 
         response = test_client.get("/api/directories")
@@ -90,7 +90,7 @@ class TestListDirectoryTree:
 
     def test_empty_tree_returns_empty_list(self, client, monkeypatch):
         test_client, _ = client
-        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s: [])
+        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s, include_missing=False: [])
         monkeypatch.setattr(routes.directory_repo, "get_status_counts", lambda _s: {})
 
         response = test_client.get("/api/directories")
@@ -202,8 +202,8 @@ class TestGetDirectoryDetail:
         assert "999" in response.json()["detail"]
 
 
-class TestTriggerDirectoryScan:
-    """POST /api/directories/{id}/scan creates a pending ScanJob and returns 202."""
+class TestTriggerDirectoryDiscover:
+    """POST /api/directories/{id}/discover creates a pending ScanJob and returns 202."""
 
     def test_creates_pending_job_and_returns_202(self, client, monkeypatch):
         test_client, fake_session = client
@@ -224,7 +224,7 @@ class TestTriggerDirectoryScan:
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: None)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
-        response = test_client.post("/api/directories/1/scan")
+        response = test_client.post("/api/directories/1/discover")
         assert response.status_code == 202
         body = response.json()
         assert body["id"] == 42
@@ -250,7 +250,7 @@ class TestTriggerDirectoryScan:
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: running)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
-        response = test_client.post("/api/directories/1/scan")
+        response = test_client.post("/api/directories/1/discover")
         assert response.status_code == 409
         assert "7" in response.json()["detail"]
         assert create_called["count"] == 0
@@ -271,7 +271,7 @@ class TestTriggerDirectoryScan:
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: pending)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
-        response = test_client.post("/api/directories/1/scan")
+        response = test_client.post("/api/directories/1/discover")
         assert response.status_code == 409
         assert "8" in response.json()["detail"]
         assert create_called["count"] == 0
@@ -280,5 +280,10 @@ class TestTriggerDirectoryScan:
         test_client, _ = client
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: None)
 
-        response = test_client.post("/api/directories/999/scan")
+        response = test_client.post("/api/directories/999/discover")
+        assert response.status_code == 404
+
+    def test_retired_scan_route_returns_404(self, client):
+        test_client, _ = client
+        response = test_client.post("/api/directories/1/scan")
         assert response.status_code == 404
