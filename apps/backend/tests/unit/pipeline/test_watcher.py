@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.pipeline import scan_cycle, watcher
+from app.pipeline import analyze_drain, scan_cycle, watcher
 from app.pipeline.scan_cycle import CycleResult
 
 
@@ -210,6 +210,7 @@ def shared_db(monkeypatch):
     monkeypatch.setattr(db_session, "SessionLocal", Maker)
     monkeypatch.setattr(watcher, "get_session", factory)
     monkeypatch.setattr(scan_cycle, "get_session", factory)
+    monkeypatch.setattr(analyze_drain, "get_session", factory)
 
     yield engine, Maker, factory
     Base.metadata.drop_all(engine)
@@ -307,3 +308,74 @@ class TestPendingJobConsumption:
             job = s.get(ScanJob, job_id)
             assert job.root_path == "/new-books"
             assert job.status == ScanJobStatus.running
+
+
+class TestAnalyzeDrainInterleave:
+    def _seed_analyze_queued_file(self, Maker) -> int:
+        with Maker() as s:
+            directory = Directory(path="/lib", name="lib", depth=0)
+            s.add(directory)
+            s.flush()
+            file_record = FileRecord(
+                directory_id=directory.id,
+                filename="book.fb2",
+                status=FileStatus.analyze_queued,
+            )
+            s.add(file_record)
+            s.commit()
+            return file_record.id
+
+    def test_no_pending_job_drains_one_analyze_file(self, shared_db):
+        engine, Maker, factory = shared_db
+        file_id = self._seed_analyze_queued_file(Maker)
+
+        drained: list = []
+
+        def fake_drain():
+            drained.append(file_id)
+            return analyze_drain.DrainResult(file_id=file_id, success=True)
+
+        with patch("app.pipeline.watcher.run_scan_cycle") as cycle_mock, patch(
+            "app.pipeline.watcher.drain_one_analyze", side_effect=fake_drain
+        ):
+            watcher._run_one_iteration("/new-books")
+
+        # No pending discover job → drain runs; no sweep job is created this iteration.
+        assert drained == [file_id]
+        cycle_mock.assert_not_called()
+        with Maker() as s:
+            assert s.query(ScanJob).count() == 0
+
+    def test_pending_discover_job_wins_over_analyze(self, shared_db):
+        """Discover-priority: a slow analyze must not starve discovery — the pending job runs first."""
+        engine, Maker, factory = shared_db
+        self._seed_analyze_queued_file(Maker)
+        with Maker() as s:
+            job = scan_job_repo.create(s, root_path="/lib")
+            s.commit()
+            job_id = job.id
+
+        with patch(
+            "app.pipeline.watcher.run_scan_cycle", side_effect=lambda jid, root: _zero_cycle(jid)
+        ) as cycle_mock, patch(
+            "app.pipeline.watcher.drain_one_analyze"
+        ) as drain_mock:
+            watcher._run_one_iteration("/new-books")
+
+        cycle_mock.assert_called_once()
+        assert cycle_mock.call_args.args[0] == job_id
+        drain_mock.assert_not_called()
+
+    def test_idle_with_empty_analyze_queue_falls_through_to_sweep(self, shared_db):
+        engine, Maker, factory = shared_db
+
+        captured_root: list = []
+
+        with patch(
+            "app.pipeline.watcher.run_scan_cycle",
+            side_effect=lambda jid, root: (captured_root.append(root) or _zero_cycle(jid)),
+        ):
+            watcher._run_one_iteration("/new-books")
+
+        # No pending job, empty analyze queue → idle sweep job created and run.
+        assert captured_root == ["/new-books"]

@@ -38,7 +38,13 @@ _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
         {FileStatus.reading, FileStatus.failed, FileStatus.missing}
     ),
     FileStatus.reading: frozenset(
-        {FileStatus.read, FileStatus.ai_queued, FileStatus.enriched, FileStatus.failed}
+        {
+            FileStatus.read,
+            FileStatus.ai_queued,
+            FileStatus.enriching,
+            FileStatus.enriched,
+            FileStatus.failed,
+        }
     ),
     FileStatus.read: frozenset(
         {
@@ -141,6 +147,35 @@ def update_status(
     if error_message is not None or new_status == FileStatus.failed:
         record.error_message = error_message
     session.flush()
+    return record
+
+
+def claim_next_analyze_queued(session: Session) -> Optional[FileRecord]:
+    """Atomically claim the oldest `analyze_queued` file (→`reading`) for the analyze drain; None if none."""
+    # Status-guarded UPDATE + rowcount==1 is the race gate: only `analyze_queued` is ever
+    # claimed — never `ai_queued`/`reading`/`enriching` — so no row is re-picked mid-pipeline.
+    oldest_id = session.execute(
+        select(FileRecord.id)
+        .where(FileRecord.status == FileStatus.analyze_queued)
+        .order_by(FileRecord.updated_at.asc(), FileRecord.id.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if oldest_id is None:
+        return None
+
+    claimed = session.execute(
+        update(FileRecord)
+        .where(
+            FileRecord.id == oldest_id,
+            FileRecord.status == FileStatus.analyze_queued,
+        )
+        .values(status=FileStatus.reading)
+    )
+    if claimed.rowcount != 1:
+        return None
+
+    record = session.get(FileRecord, oldest_id)
+    session.refresh(record)  # bulk UPDATE bypassed the identity map — reload the new status
     return record
 
 
