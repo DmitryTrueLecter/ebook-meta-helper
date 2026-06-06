@@ -23,6 +23,7 @@ from app.models.book import BookRecord
 from app.pipeline import analyze_drain
 from app.pipeline.analyze_drain import drain_one_analyze
 from app.pipeline.scan_cycle import run_scan_cycle
+from db.models.directory import Directory
 from db.models.enrichment_run import EnrichmentRun, EnrichmentStatus, EnrichmentTrigger
 from db.models.file_record import FileRecord, FileStatus
 from db.models.metadata import Metadata, MetadataSource
@@ -232,6 +233,31 @@ class TestNoAutoAnalyze:
         assert stub_provider == []
         # No drainable work was produced by discover.
         assert drain_one_analyze(session_factory) is None
+
+
+class TestNoRePickupLoop:
+    def test_drain_never_reclaims_mid_pipeline_rows(self, session, session_factory):
+        """No re-pickup loop: rows mid-pipeline (reading/ai_queued/enriching) are never drained."""
+        directory = Directory(path="/library/sci-fi", name="sci-fi", depth=1)
+        session.add(directory)
+        session.flush()
+        for name, status in (
+            ("reading.fb2", FileStatus.reading),
+            ("ai_queued.fb2", FileStatus.ai_queued),
+            ("enriching.fb2", FileStatus.enriching),
+        ):
+            session.add(FileRecord(directory_id=directory.id, filename=name, status=status))
+        session.commit()
+
+        assert drain_one_analyze(session_factory) is None
+
+        session.commit()
+        statuses = {r.filename: r.status for r in session.execute(select(FileRecord)).scalars()}
+        assert statuses == {
+            "reading.fb2": FileStatus.reading,
+            "ai_queued.fb2": FileStatus.ai_queued,
+            "enriching.fb2": FileStatus.enriching,
+        }
 
 
 class TestDrainDoesNotStarveDiscover:
