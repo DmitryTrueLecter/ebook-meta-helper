@@ -197,7 +197,7 @@ class TestGetTreeIncludeMissing:
         session.flush()
 
         default_paths = {d.path for d in directory_repo.get_tree(session)}
-        all_paths = {d.path for d in directory_repo.get_tree(session, include_missing=True)}
+        all_paths = {d.path for d in directory_repo.get_tree_including_missing(session)}
 
         assert active.path in default_paths
         assert archived.path not in default_paths

@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from db.models.directory import Directory, DirectoryStatus
 from db.models.file_record import FileRecord, FileStatus
@@ -71,11 +72,23 @@ def set_last_scanned(session: Session, directory_id: int) -> None:
     session.flush()
 
 
-def get_tree(session: Session, include_missing: bool = False) -> list[Directory]:
-    """Return directories with `children` eagerly loaded; archived (`missing`) hidden unless asked."""
+def get_tree(session: Session) -> list[Directory]:
+    """Active directories with `children` eagerly loaded; archived (`missing`) excluded."""
+    stmt = (
+        select(Directory)
+        .options(selectinload(Directory.children))
+        .where(Directory.status == DirectoryStatus.active)
+    )
+    return _ordered_tree(session, stmt)
+
+
+def get_tree_including_missing(session: Session) -> list[Directory]:
+    """Every directory with `children` eagerly loaded, including archived (`missing`) ones."""
     stmt = select(Directory).options(selectinload(Directory.children))
-    if not include_missing:
-        stmt = stmt.where(Directory.status == DirectoryStatus.active)
+    return _ordered_tree(session, stmt)
+
+
+def _ordered_tree(session: Session, stmt: Select[tuple[Directory]]) -> list[Directory]:
     stmt = stmt.order_by(Directory.depth.asc(), Directory.path.asc())
     return list(session.execute(stmt).scalars())
 
@@ -163,7 +176,7 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _subtree_clause(root_path: str):
+def _subtree_clause(root_path: str) -> ColumnElement[bool]:
     """Subtree rows: path == root or path starts with root + '/' (trailing /% prevents sibling-prefix cross-match)."""
     return (Directory.path == root_path) | (
         Directory.path.like(_escape_like(root_path) + "/%", escape="\\")

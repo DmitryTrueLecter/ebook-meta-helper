@@ -51,7 +51,7 @@ class TestListDirectoryTree:
         root = _make_directory(1, "root", "/lib", 0, parent_id=None, children=[child])
         orphan = _make_directory(3, "orphan", "/other", 0, parent_id=None, children=[])
 
-        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s, include_missing=False: [root, child, orphan])
+        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s: [root, child, orphan])
         monkeypatch.setattr(
             routes.directory_repo, "get_status_counts",
             lambda _s: {
@@ -75,7 +75,7 @@ class TestListDirectoryTree:
         test_client, _ = client
         root = _make_directory(1, "root", "/lib", 0, parent_id=None, children=[])
 
-        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s, include_missing=False: [root])
+        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s: [root])
         monkeypatch.setattr(routes.directory_repo, "get_status_counts", lambda _s: {})
 
         response = test_client.get("/api/directories")
@@ -90,12 +90,29 @@ class TestListDirectoryTree:
 
     def test_empty_tree_returns_empty_list(self, client, monkeypatch):
         test_client, _ = client
-        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s, include_missing=False: [])
+        monkeypatch.setattr(routes.directory_repo, "get_tree", lambda _s: [])
         monkeypatch.setattr(routes.directory_repo, "get_status_counts", lambda _s: {})
 
         response = test_client.get("/api/directories")
         assert response.status_code == 200
         assert response.json() == []
+
+    def test_include_missing_true_uses_full_tree_query(self, client, monkeypatch):
+        test_client, _ = client
+        archived = _make_directory(1, "old", "/lib/old", 0, parent_id=None, children=[])
+
+        def _fail_active(_s):
+            raise AssertionError("active-only get_tree must not be called with include_missing=true")
+
+        monkeypatch.setattr(routes.directory_repo, "get_tree", _fail_active)
+        monkeypatch.setattr(
+            routes.directory_repo, "get_tree_including_missing", lambda _s: [archived]
+        )
+        monkeypatch.setattr(routes.directory_repo, "get_status_counts", lambda _s: {})
+
+        response = test_client.get("/api/directories?include_missing=true")
+        assert response.status_code == 200
+        assert [node["id"] for node in response.json()] == [1]
 
 
 class TestGetDirectoryDetail:

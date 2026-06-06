@@ -29,7 +29,11 @@ def list_directory_tree(
     db: Session = Depends(get_db),
 ) -> list[DirectoryNode]:
     """Directory tree with per-directory counts; archived (`missing`) directories hidden unless `include_missing`."""
-    directories = directory_repo.get_tree(db, include_missing=include_missing)
+    directories = (
+        directory_repo.get_tree_including_missing(db)
+        if include_missing
+        else directory_repo.get_tree(db)
+    )
     stats_by_id = directory_repo.get_status_counts(db)
     visible_ids = {d.id for d in directories}
     roots = [d for d in directories if d.parent_id is None or d.parent_id not in visible_ids]

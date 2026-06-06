@@ -83,13 +83,16 @@ def _read_all_pending(
     """Read metadata for each new/changed/reappeared file (NO AI). Returns (read, failed)."""
     files_read = 0
     files_failed = 0
+    files_attempted = 0
     for file_id in file_ids:
         _update_progress(session_factory, scan_job_id, ScanProgress(current_file_id=file_id))
         success = _read_one_file(file_id, session_factory)
-        files_read += 1
-        if not success:
+        files_attempted += 1
+        if success:
+            files_read += 1
+        else:
             files_failed += 1
-        _update_progress(session_factory, scan_job_id, ScanProgress(files_processed=files_read))
+        _update_progress(session_factory, scan_job_id, ScanProgress(files_processed=files_attempted))
     return files_read, files_failed
 
 

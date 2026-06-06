@@ -298,6 +298,25 @@ class TestScanJobFailureMarking:
         assert job.status == ScanJobStatus.failed
         assert "disk exploded" in job.error_message
 
+    def test_failed_read_counts_as_failed_not_read(
+        self, tmp_path, session_factory, inspect_session
+    ):
+        """A file whose metadata read fails must count toward files_failed, never files_read."""
+        root = _make_book_tree(tmp_path, {"sci-fi": ["a.fb2"]})
+
+        def _raise_read(_record: BookRecord) -> BookRecord:
+            raise ValueError("unreadable metadata")
+
+        with _patched_read(_raise_read), _no_enrich_guard():
+            result = run_scan_cycle(
+                _running_job(session_factory, str(root)), str(root), session_factory=session_factory
+            )
+
+        assert result.files_read == 0
+        assert result.files_failed == 1
+        job = inspect_session.get(ScanJob, result.scan_job_id)
+        assert job.status == ScanJobStatus.done
+
 
 class TestSessionPolicy:
     def test_uses_short_sessions_not_one_long_session(self, tmp_path, session_factory):

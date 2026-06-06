@@ -7,6 +7,7 @@ from typing import Optional
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
@@ -239,7 +240,7 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _subtree_clause(root_path: str):
+def _subtree_clause(root_path: str) -> ColumnElement[bool]:
     """Subtree rows: path == root or path starts with root + '/' (trailing /% prevents sibling-prefix cross-match)."""
     return (Directory.path == root_path) | (
         Directory.path.like(_escape_like(root_path) + "/%", escape="\\")
