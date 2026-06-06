@@ -240,11 +240,7 @@ def _escape_like(value: str) -> str:
 
 
 def _subtree_clause(root_path: str):
-    """Match rows whose directory is the root itself or a descendant of it.
-
-    Trailing `/%` (not bare `%`) stops sibling-prefix cross-matching —
-    `/books/sci` must not capture `/books/science`.
-    """
+    """Subtree rows: path == root or path starts with root + '/' (trailing /% prevents sibling-prefix cross-match)."""
     return (Directory.path == root_path) | (
         Directory.path.like(_escape_like(root_path) + "/%", escape="\\")
     )
