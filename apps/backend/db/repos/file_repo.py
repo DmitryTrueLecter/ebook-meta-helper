@@ -30,8 +30,8 @@ class FileAttrs:
     hash: Optional[str] = None
 
 
-# Superset of the pre-split edges: the legacy reading→ai_queued→enriching path
-# stays valid (its callers are stripped in DMI-124/125), keeping the pipeline working.
+# Legacy reading→ai_queued→enriching edges retained until their callers are
+# removed; keeps the pipeline runnable during the phased refactor.
 _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
     FileStatus.pending: frozenset(
         {FileStatus.reading, FileStatus.failed, FileStatus.missing}
