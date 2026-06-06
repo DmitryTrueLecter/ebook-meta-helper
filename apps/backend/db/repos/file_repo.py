@@ -38,7 +38,13 @@ _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
         {FileStatus.reading, FileStatus.failed, FileStatus.missing}
     ),
     FileStatus.reading: frozenset(
-        {FileStatus.read, FileStatus.ai_queued, FileStatus.enriched, FileStatus.failed}
+        {
+            FileStatus.read,
+            FileStatus.ai_queued,
+            FileStatus.enriching,
+            FileStatus.enriched,
+            FileStatus.failed,
+        }
     ),
     FileStatus.read: frozenset(
         {
@@ -144,6 +150,33 @@ def update_status(
     return record
 
 
+def claim_next_analyze_queued(session: Session) -> Optional[FileRecord]:
+    """Atomically claim the oldest `analyze_queued` file (→`reading`); the status-guarded UPDATE never picks `ai_queued`/`reading`/`enriching`, so no row is re-claimed mid-pipeline. None if none."""
+    oldest_id = session.execute(
+        select(FileRecord.id)
+        .where(FileRecord.status == FileStatus.analyze_queued)
+        .order_by(FileRecord.updated_at.asc(), FileRecord.id.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if oldest_id is None:
+        return None
+
+    claimed = session.execute(
+        update(FileRecord)
+        .where(
+            FileRecord.id == oldest_id,
+            FileRecord.status == FileStatus.analyze_queued,
+        )
+        .values(status=FileStatus.reading)
+    )
+    if claimed.rowcount != 1:
+        return None
+
+    record = session.get(FileRecord, oldest_id)
+    session.refresh(record)  # bulk UPDATE bypassed the identity map — reload the new status
+    return record
+
+
 def get_by_directory(
     session: Session,
     directory_id: int,
@@ -199,13 +232,13 @@ _STALLED_STATUSES = (FileStatus.reading, FileStatus.ai_queued, FileStatus.enrich
 
 def reset_stalled_to_analyze_queued(session: Session) -> int:
     """Crash recovery: re-queue in-flight FileRecord rows for analyze (bypasses state machine)."""
-    result = session.execute(
+    update_result = session.execute(
         update(FileRecord)
         .where(FileRecord.status.in_(_STALLED_STATUSES))
         .values(status=FileStatus.analyze_queued, error_message=None)
     )
     session.flush()
-    return result.rowcount or 0
+    return update_result.rowcount or 0
 
 
 def list_directories_with_pending(session: Session) -> list[Directory]:

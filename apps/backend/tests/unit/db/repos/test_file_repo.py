@@ -34,6 +34,8 @@ class TestTransitionPredicate:
             (FileStatus.analyze_queued, FileStatus.reading),
             (FileStatus.analyze_queued, FileStatus.enriching),
             (FileStatus.analyze_queued, FileStatus.failed),
+            # analyze drain: claimed row at `reading` enters the AI enrich step
+            (FileStatus.reading, FileStatus.enriching),
             # AI enrich tail
             (FileStatus.enriching, FileStatus.enriched),
             (FileStatus.enriched, FileStatus.accepted),
@@ -509,3 +511,61 @@ class TestMarkMissingUnderRoot:
         assert marked == 2
         assert session.get(FileRecord, enriched.id).status == FileStatus.missing
         assert session.get(FileRecord, failed.id).status == FileStatus.missing
+
+
+class TestClaimNextAnalyzeQueued:
+    def _file(self, session, directory, name, status):
+        record = FileRecord(directory_id=directory.id, filename=name, status=status)
+        session.add(record)
+        session.flush()
+        return record
+
+    def test_claims_analyze_queued_and_moves_to_reading(self, session):
+        d = _new_directory(session)
+        queued = self._file(session, d, "a.fb2", FileStatus.analyze_queued)
+
+        claimed = file_repo.claim_next_analyze_queued(session)
+
+        assert claimed is not None
+        assert claimed.id == queued.id
+        assert claimed.status == FileStatus.reading
+
+    def test_returns_none_when_no_analyze_queued(self, session):
+        d = _new_directory(session)
+        self._file(session, d, "a.fb2", FileStatus.read)
+        self._file(session, d, "b.fb2", FileStatus.enriched)
+
+        assert file_repo.claim_next_analyze_queued(session) is None
+
+    def test_never_claims_ai_queued_reading_or_enriching(self, session):
+        """The drain selects ONLY analyze_queued — no re-pickup of mid-pipeline rows."""
+        d = _new_directory(session)
+        self._file(session, d, "a.fb2", FileStatus.ai_queued)
+        self._file(session, d, "b.fb2", FileStatus.reading)
+        self._file(session, d, "c.fb2", FileStatus.enriching)
+
+        assert file_repo.claim_next_analyze_queued(session) is None
+
+    def test_claims_in_fifo_order_by_id(self, session):
+        d = _new_directory(session)
+        first = self._file(session, d, "a.fb2", FileStatus.analyze_queued)
+        second = self._file(session, d, "b.fb2", FileStatus.analyze_queued)
+
+        claimed = file_repo.claim_next_analyze_queued(session)
+        assert claimed.id == first.id
+        # Second remains queued until the next claim.
+        assert session.get(FileRecord, second.id).status == FileStatus.analyze_queued
+
+    def test_serial_drain_of_multiple_queued(self, session):
+        d = _new_directory(session)
+        a = self._file(session, d, "a.fb2", FileStatus.analyze_queued)
+        b = self._file(session, d, "b.fb2", FileStatus.analyze_queued)
+
+        first = file_repo.claim_next_analyze_queued(session)
+        # Simulate the first finishing so the second is the only analyze_queued left.
+        file_repo.update_status(session, first.id, FileStatus.enriching)
+        session.flush()
+
+        second = file_repo.claim_next_analyze_queued(session)
+        assert {first.id, second.id} == {a.id, b.id}
+        assert second.status == FileStatus.reading

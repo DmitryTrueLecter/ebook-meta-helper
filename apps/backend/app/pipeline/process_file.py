@@ -1,4 +1,4 @@
-"""Pipeline: read embedded metadata, AI-enrich, persist snapshots and step logs."""
+"""Pipeline steps: read embedded metadata (discover) and AI-only analyze (explicit per-file)."""
 
 from __future__ import annotations
 
@@ -28,25 +28,6 @@ class _StepContext:
     file_id: int
     enrichment_run_id: Optional[int]
     session: Session
-
-
-# DEV-FN-SHAPE waiver: 5-param signature is a public contract from the architect's
-# spec — caller passes a per-file context the function cannot synthesize itself.
-def process_file(
-    record: BookRecord,
-    file_id: int,
-    enrichment_run_id: int,
-    directory_hint: dict | None,
-    session: Session,
-) -> PipelineResult:
-    """Step boundaries commit so AI/network work runs outside an open transaction."""
-    ctx = _StepContext(file_id=file_id, enrichment_run_id=enrichment_run_id, session=session)
-
-    after_reading = _run_reading(record, ctx)
-    if not after_reading.success:
-        return after_reading
-
-    return _run_enriching(after_reading.record, directory_hint, ctx)
 
 
 def read_file_metadata(
@@ -91,48 +72,14 @@ def read_file_metadata(
     return PipelineResult(success=True, record=cleaned)
 
 
-def _run_reading(record: BookRecord, ctx: _StepContext) -> PipelineResult:
-    file_repo.update_status(ctx.session, ctx.file_id, FileStatus.reading)
-
-    try:
-        read_result = read_metadata(record)
-        cleaned = clean_record(read_result)
-    except Exception as exc:
-        return _fail(ctx, ProcessingStep.read_metadata, exc)
-
-    try:
-        metadata_repo.create(
-            ctx.session,
-            MetadataInput(
-                file_id=ctx.file_id,
-                source=MetadataSource.file,
-                data=_record_to_data(cleaned),
-                scalars=_record_to_scalars(cleaned),
-            ),
-        )
-        file_repo.update_status(ctx.session, ctx.file_id, FileStatus.ai_queued)
-        log_repo.write(
-            ctx.session,
-            LogEntry(
-                file_id=ctx.file_id,
-                enrichment_run_id=ctx.enrichment_run_id,
-                step=ProcessingStep.read_metadata,
-                level=ProcessingLogLevel.info,
-                message="file metadata read and stored",
-            ),
-        )
-        ctx.session.commit()
-    except Exception as exc:
-        return _fail(ctx, ProcessingStep.read_metadata, exc)
-
-    return PipelineResult(success=True, record=cleaned)
-
-
-def _run_enriching(
+def analyze_file(
     record: BookRecord,
-    directory_hint: dict | None,
-    ctx: _StepContext,
+    file_id: int,
+    enrichment_run_id: int,
+    session: Session,
 ) -> PipelineResult:
+    """AI-only enrich of an already-read file — drives reading→enriched/failed."""
+    ctx = _StepContext(file_id=file_id, enrichment_run_id=enrichment_run_id, session=session)
     file_repo.update_status(ctx.session, ctx.file_id, FileStatus.enriching)
     ctx.session.commit()  # release the lock before the network call
 
@@ -140,7 +87,7 @@ def _run_enriching(
         provider_name = os.environ.get("AI_PROVIDER")
         if not provider_name:
             raise RuntimeError("AI_PROVIDER is not set")
-        ai_record = enrich(record, provider_name=provider_name, directory_hint=directory_hint)
+        ai_record = enrich(record, provider_name=provider_name, directory_hint=None)
         cleaned = clean_record(ai_record)
     except Exception as exc:
         return _fail(ctx, ProcessingStep.ai_enrich, exc)

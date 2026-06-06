@@ -977,7 +977,7 @@
     },
     "/api/files/{file_id}/enrich": {
       "post": {
-        "description": "Queue the file for AI re-enrichment \u2014 watcher picks up `ai_queued` rows on the next cycle.",
+        "description": "Queue the file for AI analyze \u2014 watcher analyze-drain picks up `analyze_queued` rows.",
         "operationId": "enrich_file_endpoint_api_files__file_id__enrich_post",
         "parameters": [
           {
