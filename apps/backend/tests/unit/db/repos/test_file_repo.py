@@ -21,17 +21,31 @@ class TestTransitionPredicate:
     @pytest.mark.parametrize(
         ("src", "dst"),
         [
+            # discover: find → read metadata (no AI)
             (FileStatus.pending, FileStatus.reading),
-            (FileStatus.reading, FileStatus.ai_queued),
-            (FileStatus.reading, FileStatus.enriched),
-            (FileStatus.ai_queued, FileStatus.enriching),
+            (FileStatus.reading, FileStatus.read),
+            # explicit per-file Analyze queues onto the durable marker
+            (FileStatus.read, FileStatus.analyze_queued),
+            (FileStatus.enriched, FileStatus.analyze_queued),
+            (FileStatus.accepted, FileStatus.analyze_queued),
+            (FileStatus.rejected, FileStatus.analyze_queued),
+            (FileStatus.failed, FileStatus.analyze_queued),
+            # drain claims the durable marker
+            (FileStatus.analyze_queued, FileStatus.reading),
+            (FileStatus.analyze_queued, FileStatus.enriching),
+            (FileStatus.analyze_queued, FileStatus.failed),
+            # AI enrich tail
             (FileStatus.enriching, FileStatus.enriched),
             (FileStatus.enriched, FileStatus.accepted),
             (FileStatus.enriched, FileStatus.rejected),
-            (FileStatus.accepted, FileStatus.ai_queued),
-            (FileStatus.rejected, FileStatus.ai_queued),
-            (FileStatus.failed, FileStatus.pending),
-            (FileStatus.failed, FileStatus.ai_queued),
+            # discover marks files gone, and recovers them on reappearance
+            (FileStatus.read, FileStatus.missing),
+            (FileStatus.enriched, FileStatus.missing),
+            (FileStatus.failed, FileStatus.missing),
+            (FileStatus.missing, FileStatus.read),
+            # legacy transient path retained until DMI-124/125 strip the callers
+            (FileStatus.reading, FileStatus.ai_queued),
+            (FileStatus.ai_queued, FileStatus.enriching),
         ],
     )
     def test_allowed_moves(self, src, dst):
@@ -42,12 +56,21 @@ class TestTransitionPredicate:
         [
             (FileStatus.pending, FileStatus.enriched),
             (FileStatus.pending, FileStatus.accepted),
-            (FileStatus.reading, FileStatus.accepted),
-            (FileStatus.ai_queued, FileStatus.accepted),
+            (FileStatus.read, FileStatus.accepted),
+            (FileStatus.analyze_queued, FileStatus.accepted),
             (FileStatus.enriching, FileStatus.accepted),
             (FileStatus.accepted, FileStatus.rejected),
             (FileStatus.rejected, FileStatus.accepted),
             (FileStatus.accepted, FileStatus.pending),
+            # accepted/rejected files moved to BOOKS_READY — discover must not mark them missing
+            (FileStatus.accepted, FileStatus.missing),
+            (FileStatus.rejected, FileStatus.missing),
+            # in-flight rows are not part of the missing predicate
+            (FileStatus.reading, FileStatus.missing),
+            (FileStatus.enriching, FileStatus.missing),
+            # missing recovery lands on read, never straight into a terminal/queued state
+            (FileStatus.missing, FileStatus.accepted),
+            (FileStatus.missing, FileStatus.analyze_queued),
         ],
     )
     def test_forbidden_moves(self, src, dst):
@@ -57,7 +80,9 @@ class TestTransitionPredicate:
         for src in (
             FileStatus.pending,
             FileStatus.reading,
+            FileStatus.read,
             FileStatus.ai_queued,
+            FileStatus.analyze_queued,
             FileStatus.enriching,
             FileStatus.enriched,
         ):
@@ -277,9 +302,9 @@ class TestListPaginated:
         assert page.items == []
 
 
-class TestResetStalledToPending:
-    """Crash-recovery reset bypasses the state machine on purpose — these
-    transitions are not in the normal allowed-edge list."""
+class TestResetStalledToAnalyzeQueued:
+    """Crash-recovery reset bypasses the state machine on purpose — it re-queues
+    in-flight rows onto the durable marker, leaving durable/terminal rows untouched."""
 
     def test_resets_reading_ai_queued_enriching(self, session):
         d = _new_directory(session)
@@ -289,32 +314,49 @@ class TestResetStalledToPending:
         session.add_all([rec_reading, rec_ai, rec_enr])
         session.flush()
 
-        count = file_repo.reset_stalled_to_pending(session)
+        count = file_repo.reset_stalled_to_analyze_queued(session)
         assert count == 3
 
         for rec in (rec_reading, rec_ai, rec_enr):
             session.refresh(rec)
-            assert rec.status == FileStatus.pending
+            assert rec.status == FileStatus.analyze_queued
 
-    def test_leaves_terminal_and_pending_alone(self, session):
+    def test_durable_analyze_queued_untouched(self, session):
+        d = _new_directory(session)
+        rec = FileRecord(directory_id=d.id, filename="durable.fb2", status=FileStatus.analyze_queued)
+        session.add(rec)
+        session.flush()
+
+        count = file_repo.reset_stalled_to_analyze_queued(session)
+        assert count == 0
+        session.refresh(rec)
+        assert rec.status == FileStatus.analyze_queued
+
+    def test_leaves_terminal_resting_alone(self, session):
         d = _new_directory(session)
         rec_pending = FileRecord(directory_id=d.id, filename="p.fb2", status=FileStatus.pending)
+        rec_read = FileRecord(directory_id=d.id, filename="rd.fb2", status=FileStatus.read)
         rec_enriched = FileRecord(directory_id=d.id, filename="x.fb2", status=FileStatus.enriched)
         rec_failed = FileRecord(directory_id=d.id, filename="f.fb2", status=FileStatus.failed)
         rec_accepted = FileRecord(directory_id=d.id, filename="a.fb2", status=FileStatus.accepted)
         rec_rejected = FileRecord(directory_id=d.id, filename="j.fb2", status=FileStatus.rejected)
-        session.add_all([rec_pending, rec_enriched, rec_failed, rec_accepted, rec_rejected])
+        rec_missing = FileRecord(directory_id=d.id, filename="m.fb2", status=FileStatus.missing)
+        session.add_all(
+            [rec_pending, rec_read, rec_enriched, rec_failed, rec_accepted, rec_rejected, rec_missing]
+        )
         session.flush()
 
-        count = file_repo.reset_stalled_to_pending(session)
+        count = file_repo.reset_stalled_to_analyze_queued(session)
         assert count == 0
 
         for rec, expected in (
             (rec_pending, FileStatus.pending),
+            (rec_read, FileStatus.read),
             (rec_enriched, FileStatus.enriched),
             (rec_failed, FileStatus.failed),
             (rec_accepted, FileStatus.accepted),
             (rec_rejected, FileStatus.rejected),
+            (rec_missing, FileStatus.missing),
         ):
             session.refresh(rec)
             assert rec.status == expected
@@ -330,7 +372,7 @@ class TestResetStalledToPending:
         session.add(rec)
         session.flush()
 
-        file_repo.reset_stalled_to_pending(session)
+        file_repo.reset_stalled_to_analyze_queued(session)
         session.refresh(rec)
         assert rec.error_message is None
 

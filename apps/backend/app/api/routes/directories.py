@@ -110,10 +110,12 @@ def _to_node(directory: Directory, stats_by_id: dict[int, DirectoryStats]) -> Di
         name=directory.name,
         path=directory.path,
         depth=directory.depth,
+        status=directory.status,
         file_count=stats.file_count,
         pending_count=stats.pending_count,
         enriched_count=stats.enriched_count,
         accepted_count=stats.accepted_count,
+        missing_count=stats.missing_count,
         children=children,
     )
 

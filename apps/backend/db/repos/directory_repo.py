@@ -31,9 +31,10 @@ class DirectoryStats:
     pending_count: int
     enriched_count: int
     accepted_count: int
+    missing_count: int
 
 
-_EMPTY_STATS = DirectoryStats(0, 0, 0, 0)
+_EMPTY_STATS = DirectoryStats(0, 0, 0, 0, 0)
 
 
 def get_or_create(session: Session, spec: DirectoryInput) -> Directory:
@@ -98,6 +99,7 @@ def get_status_counts(session: Session) -> dict[int, DirectoryStats]:
     pending: dict[int, int] = {}
     enriched: dict[int, int] = {}
     accepted: dict[int, int] = {}
+    missing: dict[int, int] = {}
     totals: dict[int, int] = {}
     for directory_id, status, count in rows:
         totals[directory_id] = totals.get(directory_id, 0) + count
@@ -107,6 +109,8 @@ def get_status_counts(session: Session) -> dict[int, DirectoryStats]:
             enriched[directory_id] = count
         elif status == FileStatus.accepted:
             accepted[directory_id] = count
+        elif status == FileStatus.missing:
+            missing[directory_id] = count
 
     return {
         directory_id: DirectoryStats(
@@ -114,6 +118,7 @@ def get_status_counts(session: Session) -> dict[int, DirectoryStats]:
             pending_count=pending.get(directory_id, 0),
             enriched_count=enriched.get(directory_id, 0),
             accepted_count=accepted.get(directory_id, 0),
+            missing_count=missing.get(directory_id, 0),
         )
         for directory_id in totals
     }
@@ -138,4 +143,5 @@ def get_stats_for_directory(session: Session, directory_id: int) -> DirectorySta
         pending_count=by_status.get(FileStatus.pending, 0),
         enriched_count=by_status.get(FileStatus.enriched, 0),
         accepted_count=by_status.get(FileStatus.accepted, 0),
+        missing_count=by_status.get(FileStatus.missing, 0),
     )

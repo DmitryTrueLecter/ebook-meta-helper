@@ -32,12 +32,15 @@ if TYPE_CHECKING:
 class FileStatus(str, enum.Enum):
     pending = "pending"
     reading = "reading"
+    read = "read"
     ai_queued = "ai_queued"
+    analyze_queued = "analyze_queued"
     enriching = "enriching"
     enriched = "enriched"
     accepted = "accepted"
     rejected = "rejected"
     failed = "failed"
+    missing = "missing"
 
 
 class FileRecord(Base):

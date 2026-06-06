@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from db.base import Base
 from db.models import (
     Directory,
+    DirectoryStatus,
     DirectoryHint,
     EnrichmentRun,
     EnrichmentStatus,
@@ -58,16 +59,18 @@ class TestModelImports:
         assert {e.value for e in FileStatus} == {
             "pending",
             "reading",
+            "read",
             "ai_queued",
+            "analyze_queued",
             "enriching",
             "enriched",
             "accepted",
             "rejected",
             "failed",
+            "missing",
         }
         assert {e.value for e in EnrichmentTrigger} == {
             "scan",
-            "user_directory",
             "user_file",
             "retry",
         }
@@ -88,6 +91,7 @@ class TestModelImports:
             "move_or_rename",
         }
         assert {e.value for e in ProcessingLogLevel} == {"info", "warn", "error"}
+        assert {e.value for e in DirectoryStatus} == {"active", "missing"}
         assert {e.value for e in ScanJobStatus} == {
             "pending",
             "running",
@@ -106,10 +110,25 @@ class TestDirectorySchema:
             "name",
             "parent_id",
             "depth",
+            "status",
             "file_count",
             "last_scanned_at",
             "discovered_at",
         } <= cols
+
+    def test_status_default_active(self, session):
+        d = Directory(path="/lib-default", name="lib-default", depth=0)
+        session.add(d)
+        session.commit()
+        session.refresh(d)
+        assert d.status == DirectoryStatus.active
+
+    def test_status_enum_assignment(self, session):
+        d = Directory(path="/lib-missing", name="lib-missing", depth=0, status=DirectoryStatus.missing)
+        session.add(d)
+        session.commit()
+        session.refresh(d)
+        assert d.status is DirectoryStatus.missing
 
     def test_path_is_unique(self, engine):
         uniques = inspect(engine).get_unique_constraints("directories")
@@ -223,6 +242,20 @@ class TestFileRecordSchema:
         session.commit()
         session.refresh(f)
         assert f.status is FileStatus.enriched
+
+    @pytest.mark.parametrize(
+        "status",
+        [FileStatus.read, FileStatus.analyze_queued, FileStatus.missing],
+    )
+    def test_new_lifecycle_statuses_assignable(self, session, status):
+        d = Directory(path=f"/d-{status.value}", name=status.value, depth=0)
+        session.add(d)
+        session.flush()
+        f = FileRecord(directory_id=d.id, filename=f"{status.value}.epub", status=status)
+        session.add(f)
+        session.commit()
+        session.refresh(f)
+        assert f.status is status
 
 
 class TestEnrichmentRunSchema:
