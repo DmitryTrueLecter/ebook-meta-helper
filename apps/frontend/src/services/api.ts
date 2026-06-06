@@ -54,14 +54,22 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   return (await response.json()) as T
 }
 
-// GET /api/directories — full tree, roots first. Archived (missing) dirs hidden unless includeMissing.
-export async function listDirectories(includeMissing = false): Promise<DirectoryNode[]> {
-  const query = includeMissing ? '?include_missing=true' : ''
+async function fetchDirectoryTree(query: string): Promise<DirectoryNode[]> {
   const tree = await apiFetch<DirectoryNode[]>(`/directories${query}`)
   if (tree === null) {
     throw new Error('Directories listing returned an empty response')
   }
   return tree
+}
+
+// GET /api/directories — full tree, roots first. Archived (missing) dirs excluded by the server.
+export async function listDirectories(): Promise<DirectoryNode[]> {
+  return fetchDirectoryTree('')
+}
+
+// GET /api/directories?include_missing=true — full tree including archived (missing) dirs.
+export async function listDirectoriesIncludingMissing(): Promise<DirectoryNode[]> {
+  return fetchDirectoryTree('?include_missing=true')
 }
 
 // GET /api/directories/{id} — directory + its files. Optional status filter.

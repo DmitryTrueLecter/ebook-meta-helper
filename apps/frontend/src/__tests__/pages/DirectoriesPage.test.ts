@@ -49,27 +49,29 @@ describe('DirectoriesPage', () => {
 
   it('calls listDirectories on mount without missing directories', async () => {
     const spy = vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    const missingSpy = vi.spyOn(api, 'listDirectoriesIncludingMissing').mockResolvedValue([])
 
     mount(DirectoriesPage, { global: { plugins: [testRouter] } })
     await flushPromises()
 
     expect(spy).toHaveBeenCalledOnce()
-    expect(spy).toHaveBeenCalledWith(false)
+    expect(missingSpy).not.toHaveBeenCalled()
   })
 
-  it('re-fetches with include_missing when the "show missing" toggle is checked', async () => {
+  it('re-fetches via listDirectoriesIncludingMissing when the "show missing" toggle is checked', async () => {
     const spy = vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    const missingSpy = vi.spyOn(api, 'listDirectoriesIncludingMissing').mockResolvedValue([])
 
     const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
     await flushPromises()
     expect(spy).toHaveBeenCalledOnce()
-    expect(spy).toHaveBeenCalledWith(false)
+    expect(missingSpy).not.toHaveBeenCalled()
 
     await wrapper.find('input[type="checkbox"]').setValue(true)
     await flushPromises()
 
-    expect(spy).toHaveBeenCalledTimes(2)
-    expect(spy).toHaveBeenLastCalledWith(true)
+    expect(missingSpy).toHaveBeenCalledOnce()
+    expect(spy).toHaveBeenCalledOnce()
   })
 
   it('shows a loading spinner while the API call is in flight', async () => {
@@ -123,13 +125,15 @@ describe('DirectoriesPage', () => {
   })
 
   it('hides missing child directories until the "show missing" toggle is checked', async () => {
-    vi.spyOn(api, 'listDirectories').mockResolvedValue([
+    const treeWithMissingChild = [
       makeNode({
         id: 1,
         name: 'fiction',
         children: [makeNode({ id: 2, name: 'archived-sub', status: 'missing' })],
       }),
-    ])
+    ]
+    vi.spyOn(api, 'listDirectories').mockResolvedValue(treeWithMissingChild)
+    vi.spyOn(api, 'listDirectoriesIncludingMissing').mockResolvedValue(treeWithMissingChild)
 
     const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
     await flushPromises()

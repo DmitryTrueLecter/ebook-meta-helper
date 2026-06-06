@@ -2,7 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import DirectoryTreeNode from '@/components/DirectoryTreeNode.vue'
-import { listDirectories } from '@/services/api'
+import { listDirectories, listDirectoriesIncludingMissing } from '@/services/api'
 import type { DirectoryNode } from '@/types'
 
 const directories = ref<DirectoryNode[]>([])
@@ -14,7 +14,9 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = null
   try {
-    directories.value = await listDirectories(showMissing.value)
+    directories.value = showMissing.value
+      ? await listDirectoriesIncludingMissing()
+      : await listDirectories()
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
