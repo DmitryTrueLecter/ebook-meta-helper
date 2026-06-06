@@ -1,37 +1,30 @@
 name: Build and push image
 
 # Triggers:
-#   - push to `dev`         → build+push, then auto-deploy to prod
-#   - push of a semver tag  → build+push only (no auto-deploy; use workflow_dispatch to deploy a tag)
-#   - workflow_dispatch      → build+push, then deploy (manual re-trigger)
+#   - push to `dev`  → builds and pushes ghcr.io/…:sha-<short> + :dev
+#   - push of a tag  → builds and pushes ghcr.io/…:<tag>       + :latest
 #
 # Required GitHub secrets / variables (set in repo Settings → Secrets and variables):
-#   GITHUB_TOKEN   — automatically provided; used for ghcr.io push auth. No extra secret needed.
+#   GITHUB_TOKEN  — automatically provided; used for ghcr.io authentication.
+#                   No extra secret needed.
 #
-# Required for the deploy job (add in Settings → Secrets and variables → Actions):
-#   DEPLOY_SSH_KEY — ed25519 / RSA private key whose public half is in
-#                    the prod server's ~/.ssh/authorized_keys for DEPLOY_USER
-#   DEPLOY_HOST    — hostname or IP of the production server
-#   DEPLOY_USER    — SSH user on the production server
-#   DEPLOY_PATH    — absolute path to the app deploy directory on the server
-#                    (e.g. /srv/ebook-meta-helper)
-#   GHCR_TOKEN     — GitHub PAT with read:packages scope; used by the server
-#                    to authenticate docker pull from ghcr.io
+# Optional (for a one-step SSH deploy job — see the commented-out job below):
+#   DEPLOY_HOST   — hostname or IP of the production server
+#   DEPLOY_USER   — SSH user on the production server
+#   DEPLOY_KEY    — private SSH key (PEM) — store as a secret
+#   DEPLOY_DIR    — absolute path to the app directory on the server
+#                   (e.g. /srv/ebook-meta-helper)
 
 on:
   push:
-    branches:
-      - dev
-    tags:
-      - "v*"
-  workflow_dispatch:
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/ebook-meta-helper
 
 jobs:
-  build-push:
+  build:
     name: Build and push to GHCR
     runs-on: ubuntu-latest
     permissions:
@@ -52,83 +45,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Derive image tags:
-      #   push to dev  → ghcr.io/…:sha-<7-char>  +  ghcr.io/…:dev
-      #   push of tag  → ghcr.io/…:<tag>           +  ghcr.io/…:latest
-      - name: Extract image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=sha-,format=short
-            type=ref,event=branch
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
-
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/ebook-meta-helper:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Deploy job — runs after build-push succeeds.
-  # Only fires on push to dev or workflow_dispatch (not on tag pushes).
-  # The server keeps its own .env; it is never touched by this job.
   deploy:
-    name: Deploy to production
+    needs: build
     runs-on: ubuntu-latest
-    needs: build-push
-    if: github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
 
     steps:
-      - name: Checkout (for docker-compose.yml)
-        uses: actions/checkout@v4
-
-      # Copy the committed docker-compose.yml to the server's deploy directory.
-      # This ensures the server always runs the exact compose definition from the repo.
-      - name: SCP docker-compose.yml to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "docker-compose.yml"
-          target: ${{ secrets.DEPLOY_PATH }}
-          strip_components: 0
-
-      # SSH into the server, log in to GHCR (using a PAT with read:packages),
-      # pull the new image, and restart the stack.
-      # IMAGE_TAG is set to :dev so the stack always pulls the dev-branch image.
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GHCR_TOKEN,IMAGE_OWNER
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -euo pipefail
-
-            # Authenticate to GHCR so docker pull works for private packages.
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$IMAGE_OWNER" --password-stdin
-
-            cd "$DEPLOY_PATH"
-
-            # Pull the latest :dev image and restart affected services.
-            IMAGE_TAG=dev docker compose pull
-            IMAGE_TAG=dev docker compose up -d --remove-orphans
-
-            echo "Deploy complete. Running containers:"
-            docker compose ps
-        env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          IMAGE_OWNER: ${{ github.repository_owner }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+            cd ${{ vars.DEPLOY_PATH }}
+            git pull origin main
+            docker compose pull
+            docker compose up -d
