@@ -39,6 +39,7 @@ class TestTransitionPredicate:
             (FileStatus.enriched, FileStatus.accepted),
             (FileStatus.enriched, FileStatus.rejected),
             # discover marks files gone, and recovers them on reappearance
+            (FileStatus.pending, FileStatus.missing),
             (FileStatus.read, FileStatus.missing),
             (FileStatus.enriched, FileStatus.missing),
             (FileStatus.failed, FileStatus.missing),

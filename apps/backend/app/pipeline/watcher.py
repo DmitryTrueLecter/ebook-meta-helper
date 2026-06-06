@@ -33,7 +33,7 @@ def run_watcher() -> None:
 
     reset_count = _reset_stalled_on_startup()
     if reset_count:
-        print(f"[watcher] recovery: reset {reset_count} stalled file records to pending")
+        print(f"[watcher] recovery: reset {reset_count} stalled file records to analyze_queued")
 
     while True:
         try:
