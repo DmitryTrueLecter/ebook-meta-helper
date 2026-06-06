@@ -27,6 +27,16 @@ class ScanOutcome:
 SUPPORTED_EXTENSIONS = {"epub", "fb2", "mobi", "azw3", "pdf", "djvu"}
 HASH_CHUNK_SIZE = 8192
 
+# Re-queuing an enrichment-owned status would raise InvalidStatusTransition(... -> reading) and crash the cycle.
+_READABLE_STATUSES = frozenset(
+    {
+        FileStatus.pending,
+        FileStatus.read,
+        FileStatus.analyze_queued,
+        FileStatus.missing,
+    }
+)
+
 def extract_sort_order(filename: str) -> Optional[float]:
     """Extract numeric sort order from filename.
     
@@ -474,7 +484,8 @@ class DBScanner:
                     self.log(f"  NEW: {file_path.relative_to(root)}")
                 else:
                     self.stats["files_updated"] += 1
-                    if reappeared or _file_change_snapshot(record) != before:
+                    content_changed = reappeared or _file_change_snapshot(record) != before
+                    if content_changed and existing.status in _READABLE_STATUSES:
                         self.outcome.file_ids_needing_read.append(record.id)
                     self.log(f"  UPD: {file_path.relative_to(root)}")
         except Exception as e:

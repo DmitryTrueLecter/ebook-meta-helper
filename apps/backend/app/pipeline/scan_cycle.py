@@ -101,6 +101,7 @@ def _read_one_file(file_id: int, session_factory: SessionFactory) -> bool:
     with session_factory() as session:
         record = _load_book_record_for_file(session, file_id)
         if record is None:
+            print(f"[discover] FileRecord {file_id} vanished between scan and read — skipping")
             return False
         result = read_file_metadata(record=record, file_id=file_id, session=session)
         return result.success

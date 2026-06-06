@@ -7,10 +7,10 @@ from typing import Optional
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.elements import ColumnElement
 
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
+from db.repos._query_utils import subtree_clause
 
 
 @dataclass(frozen=True)
@@ -235,18 +235,6 @@ _RECONCILABLE_TO_MISSING = (
 )
 
 
-def _escape_like(value: str) -> str:
-    """Escape LIKE wildcards so a literal `_` in a path can't act as a single-char match."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _subtree_clause(root_path: str) -> ColumnElement[bool]:
-    """Subtree rows: path == root or path starts with root + '/' (trailing /% prevents sibling-prefix cross-match)."""
-    return (Directory.path == root_path) | (
-        Directory.path.like(_escape_like(root_path) + "/%", escape="\\")
-    )
-
-
 def mark_missing_under_root(
     session: Session, root_path: str, present_paths: set[str]
 ) -> int:
@@ -255,7 +243,7 @@ def mark_missing_under_root(
         select(FileRecord, Directory.path)
         .join(Directory, FileRecord.directory_id == Directory.id)
         .where(
-            _subtree_clause(root_path),
+            subtree_clause(root_path),
             FileRecord.status.in_(_RECONCILABLE_TO_MISSING),
         )
     ).all()
@@ -265,7 +253,7 @@ def mark_missing_under_root(
         full_path = directory_path + "/" + record.filename
         if full_path in present_paths:
             continue
-        record.status = FileStatus.missing
+        update_status(session, record.id, FileStatus.missing)
         marked += 1
     session.flush()
     return marked

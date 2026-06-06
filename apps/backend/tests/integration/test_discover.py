@@ -143,6 +143,40 @@ class TestDiscoverReadsMetadataNoAI:
         ).scalar_one()
         assert current_snapshot_id != first_snapshot_id
 
+    def test_content_changed_enriched_file_does_not_crash_cycle(
+        self, tmp_path, session, session_factory
+    ):
+        """An enriched file replaced on disk is enrichment-owned: re-read must not be queued
+        (would raise InvalidStatusTransition enriched->reading and crash the whole cycle)."""
+        library = tmp_path / "library"
+        target = _copy(FB2_FIXTURE, library / "sci-fi", "book.fb2")
+
+        _discover(library, session_factory)
+        record = session.execute(select(FileRecord)).scalar_one()
+        for status_value in (
+            FileStatus.analyze_queued,
+            FileStatus.enriching,
+            FileStatus.enriched,
+        ):
+            record.status = status_value
+        session.commit()
+        record_id = record.id
+
+        # Replace content → size/mtime change. Discover must survive and leave the
+        # enrichment-owned status untouched (not re-queued through the read pipeline).
+        shutil.copy(EPUB_FIXTURE, target)
+        result = _discover(library, session_factory)
+        assert result.files_discovered == 0
+        assert result.files_read == 0
+        assert result.files_failed == 0
+
+        session.commit()
+        reloaded = session.execute(select(FileRecord)).scalar_one()
+        assert reloaded.id == record_id
+        assert reloaded.status == FileStatus.enriched
+        # Size still refreshed in the DB even though no re-read happened.
+        assert reloaded.size == target.stat().st_size
+
 
 class TestFileReconcile:
     def test_gone_read_file_marked_missing_history_preserved(

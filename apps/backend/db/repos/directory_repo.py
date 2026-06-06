@@ -8,10 +8,10 @@ from typing import Optional
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy.sql.elements import ColumnElement
 
 from db.models.directory import Directory, DirectoryStatus
 from db.models.file_record import FileRecord, FileStatus
+from db.repos._query_utils import subtree_clause
 
 
 @dataclass(frozen=True)
@@ -168,19 +168,7 @@ class DirectoryReconcileResult:
     deleted: int
     archived: int
     recovered: int
-    live_child_anomalies: list[str]
-
-
-def _escape_like(value: str) -> str:
-    """Escape LIKE wildcards so a literal `_` in a path can't act as a single-char match."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _subtree_clause(root_path: str) -> ColumnElement[bool]:
-    """Subtree rows: path == root or path starts with root + '/' (trailing /% prevents sibling-prefix cross-match)."""
-    return (Directory.path == root_path) | (
-        Directory.path.like(_escape_like(root_path) + "/%", escape="\\")
-    )
+    live_child_anomalies: tuple[str, ...]
 
 
 def _is_descendant_path(candidate: str, ancestor: str) -> bool:
@@ -193,7 +181,7 @@ def reconcile_missing_directories(
     """Bottom-up: hard-delete history-free gone dirs, archive history-bearing ones, recover reappeared ones."""
     directories = list(
         session.execute(
-            select(Directory).where(_subtree_clause(root_path))
+            select(Directory).where(subtree_clause(root_path))
         ).scalars()
     )
     history_paths = _directory_paths_with_history(session, root_path)
@@ -207,7 +195,7 @@ def reconcile_missing_directories(
         deleted=deleted,
         archived=archived,
         recovered=recovered,
-        live_child_anomalies=anomalies,
+        live_child_anomalies=tuple(anomalies),
     )
 
 
@@ -217,7 +205,7 @@ def _directory_paths_with_history(session: Session, root_path: str) -> set[str]:
         select(Directory.path)
         .join(FileRecord, FileRecord.directory_id == Directory.id)
         .where(
-            _subtree_clause(root_path),
+            subtree_clause(root_path),
             FileRecord.status.in_(_HISTORY_BEARING_STATUSES),
         )
         .distinct()
