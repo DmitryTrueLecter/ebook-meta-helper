@@ -12,10 +12,12 @@ function makeNode(overrides: Partial<DirectoryNode> = {}): DirectoryNode {
     name: 'root',
     path: '/lib',
     depth: 0,
+    status: 'active',
     file_count: 0,
     pending_count: 0,
     enriched_count: 0,
     accepted_count: 0,
+    missing_count: 0,
     children: [],
     ...overrides,
   }
@@ -102,6 +104,25 @@ describe('DirectoriesPage', () => {
 
     expect(wrapper.text()).toContain('fiction')
     expect(wrapper.text()).toContain('sci-fi')
+  })
+
+  it('hides missing child directories until the "show missing" toggle is checked', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([
+      makeNode({
+        id: 1,
+        name: 'fiction',
+        children: [makeNode({ id: 2, name: 'archived-sub', status: 'missing' })],
+      }),
+    ])
+
+    const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('archived-sub')
+
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+
+    expect(wrapper.text()).toContain('archived-sub')
   })
 
   it('shows an empty state when the API returns no directories', async () => {

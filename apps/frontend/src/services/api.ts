@@ -76,13 +76,13 @@ export async function getDirectoryDetail(
   return detail
 }
 
-// POST /api/directories/{id}/scan — enqueue scan, returns 202 + scan-job status.
-export async function triggerDirectoryScan(id: number): Promise<ScanJobStatus> {
-  const job = await apiFetch<ScanJobStatus>(`/directories/${id}/scan`, {
+// POST /api/directories/{id}/discover — FS↔DB sync + read metadata (no AI); returns 202 + job status.
+export async function discoverDirectory(id: number): Promise<ScanJobStatus> {
+  const job = await apiFetch<ScanJobStatus>(`/directories/${id}/discover`, {
     method: 'POST',
   })
   if (job === null) {
-    throw new Error(`Scan trigger for directory ${id} returned an empty response`)
+    throw new Error(`Discover trigger for directory ${id} returned an empty response`)
   }
   return job
 }

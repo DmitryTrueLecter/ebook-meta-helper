@@ -4,6 +4,7 @@ import {
   acceptFile,
   ApiError,
   apiFetch,
+  discoverDirectory,
   enrichFile,
   getDirectoryDetail,
   getFileDetail,
@@ -11,7 +12,6 @@ import {
   getScanStatus,
   listDirectories,
   rejectFile,
-  triggerDirectoryScan,
 } from '@/services/api'
 
 interface MockResponseInit {
@@ -205,7 +205,7 @@ describe('getDirectoryDetail', () => {
   })
 })
 
-describe('triggerDirectoryScan', () => {
+describe('discoverDirectory', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
   })
@@ -214,18 +214,18 @@ describe('triggerDirectoryScan', () => {
     vi.unstubAllGlobals()
   })
 
-  it('POSTs /api/directories/{id}/scan and returns the job', async () => {
+  it('POSTs /api/directories/{id}/discover and returns the job', async () => {
     const job = { id: 1, status: 'queued', files_discovered: 0, files_processed: 0, current_filename: null }
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(
       mockResponse({ status: 202, json: () => Promise.resolve(job) }),
     )
 
-    const result = await triggerDirectoryScan(42)
+    const result = await discoverDirectory(42)
 
     expect(result).toEqual(job)
     const call = fetchMock.mock.calls[0]
-    expect(call?.[0]).toBe('/api/directories/42/scan')
+    expect(call?.[0]).toBe('/api/directories/42/discover')
     expect((call?.[1] as RequestInit | undefined)?.method).toBe('POST')
   })
 
@@ -233,7 +233,7 @@ describe('triggerDirectoryScan', () => {
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
 
-    await expect(triggerDirectoryScan(42)).rejects.toThrow(/empty response/)
+    await expect(discoverDirectory(42)).rejects.toThrow(/empty response/)
   })
 
   it('throws on 500 with backend detail message', async () => {
@@ -243,11 +243,11 @@ describe('triggerDirectoryScan', () => {
         status: 500,
         statusText: 'Internal Server Error',
         ok: false,
-        json: () => Promise.resolve({ detail: 'scan worker offline' }),
+        json: () => Promise.resolve({ detail: 'discover worker offline' }),
       }),
     )
 
-    await expect(triggerDirectoryScan(42)).rejects.toThrow(/scan worker offline/)
+    await expect(discoverDirectory(42)).rejects.toThrow(/discover worker offline/)
   })
 })
 

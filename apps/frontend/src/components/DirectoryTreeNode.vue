@@ -1,22 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronDown, ChevronRight, FolderClosed, Loader2, ScanLine } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, FolderClosed, Loader2, RefreshCw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { triggerDirectoryScan } from '@/services/api'
+import { discoverDirectory } from '@/services/api'
 import type { DirectoryNode } from '@/types'
 
 interface Props {
   node: DirectoryNode
+  showMissing?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { showMissing: false })
 const router = useRouter()
 
 const expanded = ref(true)
-const scanning = ref(false)
-const scanError = ref<string | null>(null)
+const discovering = ref(false)
+const discoverError = ref<string | null>(null)
+
+const isMissing = computed(() => props.node.status === 'missing')
+
+const visibleChildren = computed<DirectoryNode[]>(() =>
+  props.showMissing
+    ? props.node.children
+    : props.node.children.filter((child) => child.status !== 'missing'),
+)
 
 function toggle(): void {
   expanded.value = !expanded.value
@@ -26,16 +35,16 @@ function openFiles(): void {
   void router.push({ name: 'files', params: { id: props.node.id } })
 }
 
-async function startScan(): Promise<void> {
-  scanning.value = true
-  scanError.value = null
+async function startDiscover(): Promise<void> {
+  discovering.value = true
+  discoverError.value = null
   try {
-    await triggerDirectoryScan(props.node.id)
+    await discoverDirectory(props.node.id)
     await router.push({ name: 'scan' })
   } catch (err) {
-    scanError.value = err instanceof Error ? err.message : String(err)
+    discoverError.value = err instanceof Error ? err.message : String(err)
   } finally {
-    scanning.value = false
+    discovering.value = false
   }
 }
 </script>
@@ -44,7 +53,7 @@ async function startScan(): Promise<void> {
   <li class="space-y-1">
     <div class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted/50">
       <button
-        v-if="node.children.length > 0"
+        v-if="visibleChildren.length > 0"
         type="button"
         class="flex h-5 w-5 items-center justify-center text-muted-foreground hover:text-foreground"
         :aria-label="expanded ? 'Collapse' : 'Expand'"
@@ -60,12 +69,21 @@ async function startScan(): Promise<void> {
       <button
         type="button"
         class="flex-1 text-left font-medium hover:underline"
+        :class="{ 'text-muted-foreground line-through': isMissing }"
         @click="openFiles"
       >
         {{ node.name }}
       </button>
 
       <div class="flex items-center gap-2">
+        <Badge
+          v-if="isMissing"
+          variant="outline"
+          class="border-orange-300 bg-orange-50 text-orange-800"
+          data-test="directory-missing-badge"
+        >
+          missing
+        </Badge>
         <Badge variant="secondary">{{ node.file_count }} files</Badge>
         <Badge variant="outline" class="border-yellow-300 bg-yellow-50 text-yellow-800">
           {{ node.enriched_count }} enriched
@@ -76,26 +94,35 @@ async function startScan(): Promise<void> {
         <Badge variant="outline" class="border-green-300 bg-green-50 text-green-800">
           {{ node.accepted_count }} accepted
         </Badge>
+        <Badge
+          v-if="node.missing_count > 0"
+          variant="outline"
+          class="border-orange-300 bg-orange-50 text-orange-800"
+          data-test="directory-missing-count"
+        >
+          {{ node.missing_count }} missing
+        </Badge>
         <Button
           variant="outline"
           size="sm"
-          :disabled="scanning"
-          @click="startScan"
+          :disabled="discovering"
+          @click="startDiscover"
         >
-          <Loader2 v-if="scanning" class="mr-1 h-3.5 w-3.5 animate-spin" />
-          <ScanLine v-else class="mr-1 h-3.5 w-3.5" />
-          Scan
+          <Loader2 v-if="discovering" class="mr-1 h-3.5 w-3.5 animate-spin" />
+          <RefreshCw v-else class="mr-1 h-3.5 w-3.5" />
+          Discover
         </Button>
       </div>
     </div>
 
-    <p v-if="scanError" class="pl-7 text-sm text-destructive">{{ scanError }}</p>
+    <p v-if="discoverError" class="pl-7 text-sm text-destructive">{{ discoverError }}</p>
 
-    <ul v-if="expanded && node.children.length > 0" class="ml-6 space-y-1 border-l pl-2">
+    <ul v-if="expanded && visibleChildren.length > 0" class="ml-6 space-y-1 border-l pl-2">
       <DirectoryTreeNode
-        v-for="child in node.children"
+        v-for="child in visibleChildren"
         :key="child.id"
         :node="child"
+        :show-missing="showMissing"
       />
     </ul>
   </li>
