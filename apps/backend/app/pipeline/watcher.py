@@ -45,9 +45,7 @@ def run_watcher() -> None:
 
 
 def _run_one_iteration(new_books_dir: str) -> None:
-    """One unit of work, discover-priority: a real pending discover job, else one analyze drain, else an idle sweep."""
-    # Discover is claimed first so a slow analyze never starves discovery — at most one analyze
-    # unit runs per iteration, and the next iteration re-checks discover before draining again.
+    """One unit of work, discover-priority: claim a pending discover job first so a slow analyze never starves discovery, else drain one analyze, else idle sweep."""
     pending = _claim_pending_discover()
     if pending is not None:
         _report_cycle(run_scan_cycle(pending.job_id, pending.root_path))
@@ -73,9 +71,7 @@ def _claim_pending_discover() -> Optional[_ClaimedJob]:
 
 
 def _claim_idle_sweep(new_books_dir: str) -> Optional[_ClaimedJob]:
-    """Enqueue + claim a NEW_BOOKS_DIR sweep discover job. None when nothing is claimable."""
-    # The idle sweep is folded into the job model — it runs through a ScanJob row like every
-    # UI-triggered scan, so the progress UI observes periodic sweeps the same way.
+    """Enqueue + claim a NEW_BOOKS_DIR sweep as a ScanJob row (same path as UI scans, so the progress UI observes sweeps); None when nothing is claimable."""
     with get_session() as session:
         scan_job_repo.create(session, root_path=new_books_dir)
         session.flush()

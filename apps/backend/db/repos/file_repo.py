@@ -151,9 +151,7 @@ def update_status(
 
 
 def claim_next_analyze_queued(session: Session) -> Optional[FileRecord]:
-    """Atomically claim the oldest `analyze_queued` file (→`reading`) for the analyze drain; None if none."""
-    # Status-guarded UPDATE + rowcount==1 is the race gate: only `analyze_queued` is ever
-    # claimed — never `ai_queued`/`reading`/`enriching` — so no row is re-picked mid-pipeline.
+    """Atomically claim the oldest `analyze_queued` file (→`reading`); the status-guarded UPDATE never picks `ai_queued`/`reading`/`enriching`, so no row is re-claimed mid-pipeline. None if none."""
     oldest_id = session.execute(
         select(FileRecord.id)
         .where(FileRecord.status == FileStatus.analyze_queued)
