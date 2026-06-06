@@ -47,13 +47,29 @@ describe('DirectoriesPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('calls listDirectories on mount', async () => {
+  it('calls listDirectories on mount without missing directories', async () => {
     const spy = vi.spyOn(api, 'listDirectories').mockResolvedValue([])
 
     mount(DirectoriesPage, { global: { plugins: [testRouter] } })
     await flushPromises()
 
     expect(spy).toHaveBeenCalledOnce()
+    expect(spy).toHaveBeenCalledWith(false)
+  })
+
+  it('re-fetches with include_missing when the "show missing" toggle is checked', async () => {
+    const spy = vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+
+    const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
+    await flushPromises()
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy).toHaveBeenCalledWith(false)
+
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(spy).toHaveBeenLastCalledWith(true)
   })
 
   it('shows a loading spinner while the API call is in flight', async () => {
@@ -121,6 +137,7 @@ describe('DirectoriesPage', () => {
     expect(wrapper.text()).not.toContain('archived-sub')
 
     await wrapper.find('input[type="checkbox"]').setValue(true)
+    await flushPromises()
 
     expect(wrapper.text()).toContain('archived-sub')
   })
