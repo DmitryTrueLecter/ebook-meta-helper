@@ -78,11 +78,7 @@ def analyze_file(
     enrichment_run_id: int,
     session: Session,
 ) -> PipelineResult:
-    """Analyze: AI-only enrich of an already-read file (NO re-read), persist the `ai` snapshot.
-
-    The claimed row is already at `reading`; this drives `reading→enriching→enriched`/`failed`.
-    One OpenAI call per file — no per-directory summary hint (dropped per the analyze design).
-    """
+    """AI-only enrich of an already-read file — drives reading→enriched/failed."""
     ctx = _StepContext(file_id=file_id, enrichment_run_id=enrichment_run_id, session=session)
     file_repo.update_status(ctx.session, ctx.file_id, FileStatus.enriching)
     ctx.session.commit()  # release the lock before the network call

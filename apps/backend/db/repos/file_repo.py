@@ -234,13 +234,13 @@ _STALLED_STATUSES = (FileStatus.reading, FileStatus.ai_queued, FileStatus.enrich
 
 def reset_stalled_to_analyze_queued(session: Session) -> int:
     """Crash recovery: re-queue in-flight FileRecord rows for analyze (bypasses state machine)."""
-    result = session.execute(
+    update_result = session.execute(
         update(FileRecord)
         .where(FileRecord.status.in_(_STALLED_STATUSES))
         .values(status=FileStatus.analyze_queued, error_message=None)
     )
     session.flush()
-    return result.rowcount or 0
+    return update_result.rowcount or 0
 
 
 def list_directories_with_pending(session: Session) -> list[Directory]:

@@ -37,8 +37,8 @@ def drain_one_analyze(session_factory: SessionFactory = get_session) -> Optional
     if claimed is None:
         return None
 
-    result = _run_analyze(claimed, session_factory)
-    return DrainResult(file_id=claimed.file_id, success=result)
+    succeeded = _run_analyze(claimed, session_factory)
+    return DrainResult(file_id=claimed.file_id, success=succeeded)
 
 
 @dataclass(frozen=True)
@@ -70,14 +70,17 @@ def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool
     """Resolve the open user_file run, run the AI-only enrich, then close the run."""
     with session_factory() as session:
         run_id = _resolve_run_id(session, claimed.directory_id)
-        result = analyze_file(
+        enrich_result = analyze_file(
             record=claimed.record,
             file_id=claimed.file_id,
             enrichment_run_id=run_id,
             session=session,
         )
-        _close_run(session, run_id, result.success)
-        return result.success
+        if enrich_result.success:
+            _finish_run(session, run_id)
+        else:
+            _fail_run(session, run_id)
+        return enrich_result.success
 
 
 def _resolve_run_id(session: Session, directory_id: int) -> int:
@@ -95,15 +98,17 @@ def _resolve_run_id(session: Session, directory_id: int) -> int:
     return created.id
 
 
-def _close_run(session: Session, run_id: int, success: bool) -> None:
-    if success:
-        enrichment_run_repo.finish(
-            session,
-            run_id,
-            EnrichmentRunResult(success_count=1, failure_count=0),
-        )
-    else:
-        enrichment_run_repo.fail(session, run_id, "analyze failed")
+def _finish_run(session: Session, run_id: int) -> None:
+    enrichment_run_repo.finish(
+        session,
+        run_id,
+        EnrichmentRunResult(success_count=1, failure_count=0),
+    )
+    session.commit()
+
+
+def _fail_run(session: Session, run_id: int) -> None:
+    enrichment_run_repo.fail(session, run_id, "analyze failed")
     session.commit()
 
 
@@ -123,7 +128,7 @@ def _snapshot_to_book_record(
             directories=directories,
             source="file",
         )
-    data = snapshot.data if isinstance(snapshot.data, dict) else {}
+    snapshot_dict = snapshot.data if isinstance(snapshot.data, dict) else {}
     return BookRecord(
         path=full_path,
         original_filename=record.filename,
@@ -131,8 +136,8 @@ def _snapshot_to_book_record(
         directories=directories,
         title=snapshot.title,
         subtitle=snapshot.subtitle,
-        authors=_string_list(data.get("authors")),
-        description=_optional_string(data.get("description")),
+        authors=_string_list(snapshot_dict.get("authors")),
+        description=_optional_string(snapshot_dict.get("description")),
         series=snapshot.series,
         series_index=snapshot.series_index,
         series_total=snapshot.series_total,
@@ -143,7 +148,7 @@ def _snapshot_to_book_record(
         asin=snapshot.asin,
         published=snapshot.published,
         year=snapshot.year,
-        tags=_string_list(data.get("tags")),
+        tags=_string_list(snapshot_dict.get("tags")),
         source="file",
     )
 
