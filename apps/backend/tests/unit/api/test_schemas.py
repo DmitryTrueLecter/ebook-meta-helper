@@ -22,24 +22,25 @@ from app.api.schemas import (
 class TestDirectoryNode:
     def test_minimal_valid_payload_defaults_children_to_empty_list(self):
         node = DirectoryNode(
-            id=1, name="Sci-Fi", path="/library/sci-fi", depth=1,
-            file_count=10, pending_count=3, enriched_count=5, accepted_count=2,
+            id=1, name="Sci-Fi", path="/library/sci-fi", depth=1, status="active",
+            file_count=10, pending_count=3, enriched_count=5, accepted_count=2, missing_count=0,
         )
         assert node.children == []
 
     def test_nested_children_are_directory_nodes(self):
         node = DirectoryNode(
-            id=1, name="root", path="/library", depth=0,
-            file_count=20, pending_count=0, enriched_count=10, accepted_count=10,
+            id=1, name="root", path="/library", depth=0, status="active",
+            file_count=20, pending_count=0, enriched_count=10, accepted_count=10, missing_count=0,
             children=[
                 {
                     "id": 2, "name": "child", "path": "/library/child", "depth": 1,
-                    "file_count": 5, "pending_count": 1, "enriched_count": 2, "accepted_count": 2,
+                    "status": "active", "file_count": 5, "pending_count": 1,
+                    "enriched_count": 2, "accepted_count": 2, "missing_count": 0,
                     "children": [
                         {
                             "id": 3, "name": "grandchild", "path": "/library/child/g",
-                            "depth": 2, "file_count": 0, "pending_count": 0,
-                            "enriched_count": 0, "accepted_count": 0,
+                            "depth": 2, "status": "missing", "file_count": 0, "pending_count": 0,
+                            "enriched_count": 0, "accepted_count": 0, "missing_count": 0,
                         },
                     ],
                 },
@@ -49,25 +50,35 @@ class TestDirectoryNode:
         assert isinstance(node.children[0], DirectoryNode)
         assert isinstance(node.children[0].children[0], DirectoryNode)
         assert node.children[0].children[0].name == "grandchild"
+        assert node.children[0].children[0].status.value == "missing"
 
     def test_missing_required_field_raises(self):
         with pytest.raises(ValidationError) as exc:
             DirectoryNode(
-                id=1, name="x", path="/x", depth=0,
-                file_count=0, pending_count=0, enriched_count=0,
+                id=1, name="x", path="/x", depth=0, status="active",
+                file_count=0, pending_count=0, enriched_count=0, missing_count=0,
                 # accepted_count omitted
             )
         assert "accepted_count" in str(exc.value)
 
+    def test_status_rejects_value_outside_directory_status_enum(self):
+        with pytest.raises(ValidationError):
+            DirectoryNode(
+                id=1, name="x", path="/x", depth=0, status="archived",
+                file_count=0, pending_count=0, enriched_count=0, accepted_count=0, missing_count=0,
+            )
+
     def test_from_attributes_projects_orm_like_object(self):
         orm = SimpleNamespace(
-            id=42, name="Library", path="/library", depth=0,
-            file_count=100, pending_count=50, enriched_count=30, accepted_count=20,
+            id=42, name="Library", path="/library", depth=0, status="active",
+            file_count=100, pending_count=50, enriched_count=30, accepted_count=20, missing_count=5,
             children=[],
         )
         node = DirectoryNode.model_validate(orm)
         assert node.id == 42
         assert node.name == "Library"
+        assert node.missing_count == 5
+        assert node.status.value == "active"
 
 
 class TestFileListItem:

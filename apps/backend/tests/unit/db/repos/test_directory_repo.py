@@ -123,10 +123,10 @@ class TestGetStatusCounts:
 
         counts = directory_repo.get_status_counts(session)
         assert counts[d1.id] == DirectoryStats(
-            file_count=3, pending_count=2, enriched_count=1, accepted_count=0,
+            file_count=3, pending_count=2, enriched_count=1, accepted_count=0, missing_count=0,
         )
         assert counts[d2.id] == DirectoryStats(
-            file_count=1, pending_count=0, enriched_count=0, accepted_count=1,
+            file_count=1, pending_count=0, enriched_count=0, accepted_count=1, missing_count=0,
         )
 
     def test_returns_empty_dict_when_no_files(self, session):
@@ -140,7 +140,22 @@ class TestGetStatusCounts:
 
         counts = directory_repo.get_status_counts(session)
         assert counts[d.id] == DirectoryStats(
-            file_count=1, pending_count=0, enriched_count=0, accepted_count=0,
+            file_count=1, pending_count=0, enriched_count=0, accepted_count=0, missing_count=0,
+        )
+
+    def test_missing_files_counted_separately(self, session):
+        d = directory_repo.get_or_create(session, _spec("/a", "a"))
+        f_present = file_repo.get_or_create(session, d.id, "here.epub", FileAttrs(extension="epub"))
+        f_gone = file_repo.get_or_create(session, d.id, "gone.epub", FileAttrs(extension="epub"))
+        file_repo.update_status(session, f_present.id, FileStatus.reading)
+        file_repo.update_status(session, f_present.id, FileStatus.read)
+        file_repo.update_status(session, f_gone.id, FileStatus.reading)
+        file_repo.update_status(session, f_gone.id, FileStatus.read)
+        file_repo.update_status(session, f_gone.id, FileStatus.missing)
+
+        counts = directory_repo.get_status_counts(session)
+        assert counts[d.id] == DirectoryStats(
+            file_count=2, pending_count=0, enriched_count=0, accepted_count=0, missing_count=1,
         )
 
 
@@ -154,19 +169,21 @@ class TestGetStatsForDirectory:
 
         stats = directory_repo.get_stats_for_directory(session, d.id)
         assert stats == DirectoryStats(
-            file_count=2, pending_count=1, enriched_count=1, accepted_count=0,
+            file_count=2, pending_count=1, enriched_count=1, accepted_count=0, missing_count=0,
         )
 
     def test_returns_zeroed_when_no_files(self, session):
         d = directory_repo.get_or_create(session, _spec("/empty", "empty"))
-        assert directory_repo.get_stats_for_directory(session, d.id) == DirectoryStats(0, 0, 0, 0)
+        assert directory_repo.get_stats_for_directory(session, d.id) == DirectoryStats(0, 0, 0, 0, 0)
 
 
 class TestStatsFor:
     def test_returns_stored_stats_when_present(self):
-        stats = DirectoryStats(file_count=4, pending_count=1, enriched_count=2, accepted_count=1)
+        stats = DirectoryStats(
+            file_count=4, pending_count=1, enriched_count=2, accepted_count=1, missing_count=0,
+        )
         assert directory_repo.stats_for({7: stats}, directory_id=7) is stats
 
     def test_returns_zeroed_stats_when_missing(self):
         result = directory_repo.stats_for({}, directory_id=7)
-        assert result == DirectoryStats(0, 0, 0, 0)
+        assert result == DirectoryStats(0, 0, 0, 0, 0)

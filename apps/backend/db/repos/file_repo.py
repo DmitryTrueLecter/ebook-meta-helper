@@ -30,20 +30,43 @@ class FileAttrs:
     hash: Optional[str] = None
 
 
-# State machine: see invariant tests for the full allowed-edge list.
+# Legacy reading→ai_queued→enriching edges retained until their callers are
+# removed; keeps the pipeline runnable during the phased refactor.
 _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
-    FileStatus.pending: frozenset({FileStatus.reading, FileStatus.failed}),
+    FileStatus.pending: frozenset(
+        {FileStatus.reading, FileStatus.failed, FileStatus.missing}
+    ),
     FileStatus.reading: frozenset(
-        {FileStatus.ai_queued, FileStatus.enriched, FileStatus.failed}
+        {FileStatus.read, FileStatus.ai_queued, FileStatus.enriched, FileStatus.failed}
+    ),
+    FileStatus.read: frozenset(
+        {FileStatus.analyze_queued, FileStatus.failed, FileStatus.missing}
     ),
     FileStatus.ai_queued: frozenset({FileStatus.enriching, FileStatus.failed}),
+    FileStatus.analyze_queued: frozenset(
+        {FileStatus.reading, FileStatus.enriching, FileStatus.failed}
+    ),
     FileStatus.enriching: frozenset({FileStatus.enriched, FileStatus.failed}),
     FileStatus.enriched: frozenset(
-        {FileStatus.accepted, FileStatus.rejected, FileStatus.failed}
+        {
+            FileStatus.accepted,
+            FileStatus.rejected,
+            FileStatus.analyze_queued,
+            FileStatus.failed,
+            FileStatus.missing,
+        }
     ),
-    FileStatus.accepted: frozenset({FileStatus.ai_queued}),
-    FileStatus.rejected: frozenset({FileStatus.ai_queued}),
-    FileStatus.failed: frozenset({FileStatus.pending, FileStatus.ai_queued}),
+    FileStatus.accepted: frozenset({FileStatus.ai_queued, FileStatus.analyze_queued}),
+    FileStatus.rejected: frozenset({FileStatus.ai_queued, FileStatus.analyze_queued}),
+    FileStatus.failed: frozenset(
+        {
+            FileStatus.pending,
+            FileStatus.ai_queued,
+            FileStatus.analyze_queued,
+            FileStatus.missing,
+        }
+    ),
+    FileStatus.missing: frozenset({FileStatus.read}),
 }
 
 
@@ -163,15 +186,17 @@ def list_paginated(
     return PaginatedRecords(items=list(rows), total=int(total))
 
 
+# Durable `analyze_queued` is deliberately absent — it is the queue marker the
+# drain re-claims after a restart, so a crash must not disturb it.
 _STALLED_STATUSES = (FileStatus.reading, FileStatus.ai_queued, FileStatus.enriching)
 
 
-def reset_stalled_to_pending(session: Session) -> int:
-    """Crash recovery: move in-flight FileRecord rows back to pending (bypasses state machine)."""
+def reset_stalled_to_analyze_queued(session: Session) -> int:
+    """Crash recovery: re-queue in-flight FileRecord rows for analyze (bypasses state machine)."""
     result = session.execute(
         update(FileRecord)
         .where(FileRecord.status.in_(_STALLED_STATUSES))
-        .values(status=FileStatus.pending, error_message=None)
+        .values(status=FileStatus.analyze_queued, error_message=None)
     )
     session.flush()
     return result.rowcount or 0

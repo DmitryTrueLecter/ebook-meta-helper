@@ -11,15 +11,17 @@ from fastapi.testclient import TestClient
 from app.api.deps import get_db
 from app.api.main import app
 from app.api.routes import directories as routes
+from db.models.directory import DirectoryStatus
 from db.models.file_record import FileStatus
 from db.models.scan_job import ScanJobStatus as ScanJobState
 from db.repos.directory_repo import DirectoryStats
 
 
-def _make_directory(id_: int, name: str, path: str, depth: int, parent_id=None, children=None):
+def _make_directory(id_: int, name: str, path: str, depth: int, parent_id=None, children=None,
+                    status=DirectoryStatus.active):
     """Build a Directory-shaped stub good enough for from_attributes projection."""
     return SimpleNamespace(
-        id=id_, name=name, path=path, depth=depth,
+        id=id_, name=name, path=path, depth=depth, status=status,
         parent_id=parent_id, children=children or [],
     )
 
@@ -53,9 +55,9 @@ class TestListDirectoryTree:
         monkeypatch.setattr(
             routes.directory_repo, "get_status_counts",
             lambda _s: {
-                1: DirectoryStats(file_count=10, pending_count=3, enriched_count=5, accepted_count=2),
-                2: DirectoryStats(file_count=4, pending_count=1, enriched_count=2, accepted_count=1),
-                3: DirectoryStats(file_count=0, pending_count=0, enriched_count=0, accepted_count=0),
+                1: DirectoryStats(file_count=10, pending_count=3, enriched_count=5, accepted_count=2, missing_count=1),
+                2: DirectoryStats(file_count=4, pending_count=1, enriched_count=2, accepted_count=1, missing_count=0),
+                3: DirectoryStats(file_count=0, pending_count=0, enriched_count=0, accepted_count=0, missing_count=0),
             },
         )
 
@@ -65,6 +67,8 @@ class TestListDirectoryTree:
         assert [node["id"] for node in body] == [1, 3]
         assert body[0]["children"][0]["id"] == 2
         assert body[0]["pending_count"] == 3
+        assert body[0]["missing_count"] == 1
+        assert body[0]["status"] == "active"
         assert body[0]["children"][0]["accepted_count"] == 1
 
     def test_directory_without_files_yields_zero_counts(self, client, monkeypatch):
@@ -81,6 +85,8 @@ class TestListDirectoryTree:
         assert node["pending_count"] == 0
         assert node["enriched_count"] == 0
         assert node["accepted_count"] == 0
+        assert node["missing_count"] == 0
+        assert node["status"] == "active"
 
     def test_empty_tree_returns_empty_list(self, client, monkeypatch):
         test_client, _ = client
@@ -105,7 +111,7 @@ class TestGetDirectoryDetail:
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
         monkeypatch.setattr(
             routes.directory_repo, "get_stats_for_directory",
-            lambda _s, _id: DirectoryStats(2, 1, 1, 0),
+            lambda _s, _id: DirectoryStats(2, 1, 1, 0, 0),
         )
         monkeypatch.setattr(routes.file_repo, "get_by_directory", lambda _s, _d, _st: files)
         monkeypatch.setattr(
@@ -133,7 +139,7 @@ class TestGetDirectoryDetail:
             return []
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0))
+        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0, 0))
         monkeypatch.setattr(routes.file_repo, "get_by_directory", capture)
         monkeypatch.setattr(routes.metadata_repo, "find_files_with_ai_suggestion", lambda _s, ids: set())
 
@@ -151,7 +157,7 @@ class TestGetDirectoryDetail:
             return []
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0))
+        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0, 0))
         monkeypatch.setattr(routes.file_repo, "get_by_directory", capture)
         monkeypatch.setattr(routes.metadata_repo, "find_files_with_ai_suggestion", lambda _s, ids: set())
 
@@ -169,7 +175,7 @@ class TestGetDirectoryDetail:
             return []
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0))
+        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0, 0))
         monkeypatch.setattr(routes.file_repo, "get_by_directory", capture)
         monkeypatch.setattr(routes.metadata_repo, "find_files_with_ai_suggestion", lambda _s, ids: set())
 

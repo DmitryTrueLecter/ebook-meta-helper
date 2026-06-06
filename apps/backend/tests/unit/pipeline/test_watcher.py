@@ -55,7 +55,7 @@ def in_memory_db(monkeypatch):
 
 
 class TestStartupRecovery:
-    def test_resets_in_flight_statuses_to_pending(self, in_memory_db):
+    def test_resets_in_flight_statuses_to_analyze_queued(self, in_memory_db):
         engine, Maker = in_memory_db
 
         with Maker() as session:
@@ -69,6 +69,8 @@ class TestStartupRecovery:
                 FileRecord(directory_id=directory.id, filename="d.fb2", status=FileStatus.enriched),
                 FileRecord(directory_id=directory.id, filename="e.fb2", status=FileStatus.pending),
                 FileRecord(directory_id=directory.id, filename="f.fb2", status=FileStatus.failed),
+                # durable queue marker survives a restart untouched
+                FileRecord(directory_id=directory.id, filename="g.fb2", status=FileStatus.analyze_queued),
             ])
             session.commit()
 
@@ -77,13 +79,14 @@ class TestStartupRecovery:
 
         with Maker() as session:
             by_name = {f.filename: f for f in session.query(FileRecord).all()}
-            assert by_name["a.fb2"].status == FileStatus.pending
-            assert by_name["b.fb2"].status == FileStatus.pending
-            assert by_name["c.fb2"].status == FileStatus.pending
+            assert by_name["a.fb2"].status == FileStatus.analyze_queued
+            assert by_name["b.fb2"].status == FileStatus.analyze_queued
+            assert by_name["c.fb2"].status == FileStatus.analyze_queued
             # untouched
             assert by_name["d.fb2"].status == FileStatus.enriched
             assert by_name["e.fb2"].status == FileStatus.pending
             assert by_name["f.fb2"].status == FileStatus.failed
+            assert by_name["g.fb2"].status == FileStatus.analyze_queued
 
     def test_resets_clear_prior_error_message(self, in_memory_db):
         engine, Maker = in_memory_db
@@ -106,7 +109,7 @@ class TestStartupRecovery:
 
         with Maker() as session:
             record = session.query(FileRecord).filter_by(filename="stuck.fb2").one()
-            assert record.status == FileStatus.pending
+            assert record.status == FileStatus.analyze_queued
             assert record.error_message is None
 
     def test_returns_zero_when_no_stalled_rows(self, in_memory_db):

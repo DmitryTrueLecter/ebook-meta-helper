@@ -165,7 +165,7 @@ class TestPipelineEndToEnd:
 class TestCrashRecovery:
     """An `enriching` row left over from a prior crash must be reset before processing."""
 
-    def test_watcher_init_resets_stalled_enriching_to_pending(
+    def test_watcher_init_resets_stalled_enriching_to_analyze_queued(
         self,
         book_library: Path,
         session: Session,
@@ -193,5 +193,5 @@ class TestCrashRecovery:
         recovered = session.execute(
             select(FileRecord).where(FileRecord.id == target.id)
         ).scalar_one()
-        assert recovered.status == FileStatus.pending
+        assert recovered.status == FileStatus.analyze_queued
         assert recovered.error_message is None

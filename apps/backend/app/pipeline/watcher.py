@@ -33,7 +33,7 @@ def run_watcher() -> None:
 
     reset_count = _reset_stalled_on_startup()
     if reset_count:
-        print(f"[watcher] recovery: reset {reset_count} stalled file records to pending")
+        print(f"[watcher] recovery: reset {reset_count} stalled file records to analyze_queued")
 
     while True:
         try:
@@ -68,9 +68,9 @@ def _claim_next_job(new_books_dir: str) -> Optional[_ClaimedJob]:
 
 
 def _reset_stalled_on_startup() -> int:
-    """Run the in-flight → pending reset in a single short session."""
+    """Run the in-flight → analyze_queued reset in a single short session."""
     with get_session() as session:
-        return file_repo.reset_stalled_to_pending(session)
+        return file_repo.reset_stalled_to_analyze_queued(session)
 
 
 def _report_cycle(result: CycleResult) -> None:

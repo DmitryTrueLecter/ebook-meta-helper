@@ -87,6 +87,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "missing_count": {
+            "title": "Missing Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -98,6 +102,9 @@
           "pending_count": {
             "title": "Pending Count",
             "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DirectoryStatus"
           }
         },
         "required": [
@@ -105,13 +112,23 @@
           "name",
           "path",
           "depth",
+          "status",
           "file_count",
           "pending_count",
           "enriched_count",
-          "accepted_count"
+          "accepted_count",
+          "missing_count"
         ],
         "title": "DirectoryNode",
         "type": "object"
+      },
+      "DirectoryStatus": {
+        "enum": [
+          "active",
+          "missing"
+        ],
+        "title": "DirectoryStatus",
+        "type": "string"
       },
       "EnrichmentTriggerResponse": {
         "description": "202 response from POST /api/files/{id}/enrich \u2014 exposes the new run id.",
@@ -302,12 +319,15 @@
         "enum": [
           "pending",
           "reading",
+          "read",
           "ai_queued",
+          "analyze_queued",
           "enriching",
           "enriched",
           "accepted",
           "rejected",
-          "failed"
+          "failed",
+          "missing"
         ],
         "title": "FileStatus",
         "type": "string"
