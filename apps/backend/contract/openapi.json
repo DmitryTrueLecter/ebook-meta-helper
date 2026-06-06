@@ -652,8 +652,20 @@
   "paths": {
     "/api/directories": {
       "get": {
-        "description": "Full directory tree rooted at every depth-0 row, with per-directory counts.",
+        "description": "Directory tree with per-directory counts; archived (`missing`) directories hidden unless `include_missing`.",
         "operationId": "list_directory_tree_api_directories_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_missing",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Missing",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -668,6 +680,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Directory Tree",
@@ -735,10 +757,10 @@
         ]
       }
     },
-    "/api/directories/{directory_id}/scan": {
+    "/api/directories/{directory_id}/discover": {
       "post": {
-        "description": "Enqueue a scan + enrichment job for the directory; watcher picks up `pending` rows.",
-        "operationId": "trigger_directory_scan_api_directories__directory_id__scan_post",
+        "description": "Enqueue a discover job (FS\u2194DB sync + read file metadata, NO AI); watcher runs it.",
+        "operationId": "trigger_directory_discover_api_directories__directory_id__discover_post",
         "parameters": [
           {
             "in": "path",
@@ -772,7 +794,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Trigger Directory Scan",
+        "summary": "Trigger Directory Discover",
         "tags": [
           "directories"
         ]

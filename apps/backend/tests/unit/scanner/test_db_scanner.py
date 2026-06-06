@@ -4,6 +4,9 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from app.scanner.db_scanner import (
     compute_file_hash,
     detect_format,
@@ -14,8 +17,10 @@ from app.scanner.db_scanner import (
     DBScanner,
     scan_directory_to_db,
 )
+from db.base import Base
+import db.models  # noqa: F401 — register all models with Base.metadata
 from db.models.directory import Directory
-from db.models.file_record import FileRecord
+from db.models.file_record import FileRecord, FileStatus
 
 
 class TestExtractSortOrder:
@@ -311,3 +316,92 @@ def mock_session():
     session = MagicMock()
     session.query.return_value.filter.return_value.first.return_value = None
     return session
+
+
+@pytest.fixture
+def real_session():
+    """In-memory SQLite session for tests that need real FileRecord rows."""
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        yield s
+    engine.dispose()
+
+
+class TestContentChangedReadGating:
+    """A content-changed file is only re-queued when its status is read-pipeline-owned;
+    enrichment-owned statuses keep size/mtime updated but must not be re-queued."""
+
+    def _scan_once(self, session, root):
+        scanner = DBScanner(session)
+        scanner.scan(str(root))
+        return scanner
+
+    def test_changed_read_file_is_requeued(self, tmp_path, real_session):
+        root = tmp_path / "books"
+        root.mkdir()
+        target = root / "book.epub"
+        target.write_bytes(b"original content")
+
+        self._scan_once(real_session, root)
+        record = real_session.query(FileRecord).one()
+        record.status = FileStatus.read
+        real_session.flush()
+
+        target.write_bytes(b"changed content is longer than before")
+        scanner = self._scan_once(real_session, root)
+
+        assert scanner.outcome.file_ids_needing_read == [record.id]
+
+    def test_changed_enriched_file_not_requeued_but_size_updated(
+        self, tmp_path, real_session
+    ):
+        root = tmp_path / "books"
+        root.mkdir()
+        target = root / "book.epub"
+        target.write_bytes(b"original content")
+
+        self._scan_once(real_session, root)
+        record = real_session.query(FileRecord).one()
+        record.status = FileStatus.enriched
+        real_session.flush()
+
+        new_bytes = b"changed content is longer than before"
+        target.write_bytes(new_bytes)
+        scanner = self._scan_once(real_session, root)
+
+        # Enrichment-owned: NOT re-queued (would crash via enriched->reading).
+        assert scanner.outcome.file_ids_needing_read == []
+        # But its size/mtime ARE refreshed in the DB.
+        real_session.refresh(record)
+        assert record.size == len(new_bytes)
+        assert record.status == FileStatus.enriched
+
+    @pytest.mark.parametrize(
+        "owned_status",
+        [
+            FileStatus.enriched,
+            FileStatus.accepted,
+            FileStatus.rejected,
+            FileStatus.ai_queued,
+            FileStatus.enriching,
+            FileStatus.failed,
+        ],
+    )
+    def test_enrichment_owned_statuses_never_requeued(
+        self, tmp_path, real_session, owned_status
+    ):
+        root = tmp_path / "books"
+        root.mkdir()
+        target = root / "book.epub"
+        target.write_bytes(b"original content")
+
+        self._scan_once(real_session, root)
+        record = real_session.query(FileRecord).one()
+        record.status = owned_status
+        real_session.flush()
+
+        target.write_bytes(b"changed content is longer than before")
+        scanner = self._scan_once(real_session, root)
+
+        assert scanner.outcome.file_ids_needing_read == []

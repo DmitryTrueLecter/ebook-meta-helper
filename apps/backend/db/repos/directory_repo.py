@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from db.models.directory import Directory
+from db.models.directory import Directory, DirectoryStatus
 from db.models.file_record import FileRecord, FileStatus
+from db.repos._query_utils import subtree_clause
 
 
 @dataclass(frozen=True)
@@ -72,14 +73,24 @@ def set_last_scanned(session: Session, directory_id: int) -> None:
 
 
 def get_tree(session: Session) -> list[Directory]:
-    """Return all directories with `children` eagerly loaded; roots first."""
-    return list(
-        session.execute(
-            select(Directory)
-            .options(selectinload(Directory.children))
-            .order_by(Directory.depth.asc(), Directory.path.asc())
-        ).scalars()
+    """Active directories with `children` eagerly loaded; archived (`missing`) excluded."""
+    stmt = (
+        select(Directory)
+        .options(selectinload(Directory.children))
+        .where(Directory.status == DirectoryStatus.active)
     )
+    return _ordered_tree(session, stmt)
+
+
+def get_tree_including_missing(session: Session) -> list[Directory]:
+    """Every directory with `children` eagerly loaded, including archived (`missing`) ones."""
+    stmt = select(Directory).options(selectinload(Directory.children))
+    return _ordered_tree(session, stmt)
+
+
+def _ordered_tree(session: Session, stmt: Select[tuple[Directory]]) -> list[Directory]:
+    stmt = stmt.order_by(Directory.depth.asc(), Directory.path.asc())
+    return list(session.execute(stmt).scalars())
 
 
 def get_by_id(session: Session, directory_id: int) -> Optional[Directory]:
@@ -145,3 +156,144 @@ def get_stats_for_directory(session: Session, directory_id: int) -> DirectorySta
         accepted_count=by_status.get(FileStatus.accepted, 0),
         missing_count=by_status.get(FileStatus.missing, 0),
     )
+
+
+_HISTORY_BEARING_STATUSES = (FileStatus.accepted, FileStatus.rejected)
+
+
+@dataclass(frozen=True)
+class DirectoryReconcileResult:
+    """Per-call tally for logging — counts of each reconcile outcome."""
+
+    deleted: int
+    archived: int
+    recovered: int
+    live_child_anomalies: tuple[str, ...]
+
+
+def _is_descendant_path(candidate: str, ancestor: str) -> bool:
+    return candidate.startswith(ancestor + "/")
+
+
+def reconcile_missing_directories(
+    session: Session, root_path: str, present_dir_paths: set[str]
+) -> DirectoryReconcileResult:
+    """Bottom-up: hard-delete history-free gone dirs, archive history-bearing ones, recover reappeared ones."""
+    directories = list(
+        session.execute(
+            select(Directory).where(subtree_clause(root_path))
+        ).scalars()
+    )
+    history_paths = _directory_paths_with_history(session, root_path)
+
+    recovered = _recover_reappeared(directories, present_dir_paths)
+    deleted, archived, anomalies = _retire_gone_directories(
+        session, directories, present_dir_paths, history_paths
+    )
+    session.flush()
+    return DirectoryReconcileResult(
+        deleted=deleted,
+        archived=archived,
+        recovered=recovered,
+        live_child_anomalies=tuple(anomalies),
+    )
+
+
+def _directory_paths_with_history(session: Session, root_path: str) -> set[str]:
+    """Paths of directories under root that own at least one accepted/rejected file."""
+    rows = session.execute(
+        select(Directory.path)
+        .join(FileRecord, FileRecord.directory_id == Directory.id)
+        .where(
+            subtree_clause(root_path),
+            FileRecord.status.in_(_HISTORY_BEARING_STATUSES),
+        )
+        .distinct()
+    ).scalars()
+    return set(rows)
+
+
+def _recover_reappeared(
+    directories: list[Directory], present_dir_paths: set[str]
+) -> int:
+    recovered = 0
+    for directory in directories:
+        if directory.path in present_dir_paths and directory.status == DirectoryStatus.missing:
+            directory.status = DirectoryStatus.active
+            recovered += 1
+    return recovered
+
+
+def _retire_gone_directories(
+    session: Session,
+    directories: list[Directory],
+    present_dir_paths: set[str],
+    history_paths: set[str],
+) -> tuple[int, int, list[str]]:
+    deleted = 0
+    archived = 0
+    anomalies: list[str] = []
+    handled: set[int] = set()
+    # Deepest-first so a gone child is retired before its gone parent's subtree is processed.
+    for directory in sorted(directories, key=lambda d: d.depth, reverse=True):
+        if directory.id in handled or directory.path in present_dir_paths:
+            continue
+        if _has_live_descendant(directory.path, directories, present_dir_paths):
+            anomalies.append(directory.path)
+            continue
+        if _subtree_has_history(directory.path, history_paths):
+            archived += _archive_subtree(directory, directories, handled)
+        else:
+            deleted += _delete_subtree(session, directory, directories, handled)
+    return deleted, archived, anomalies
+
+
+def _has_live_descendant(
+    path: str, directories: list[Directory], present_dir_paths: set[str]
+) -> bool:
+    return any(
+        _is_descendant_path(other.path, path) and other.path in present_dir_paths
+        for other in directories
+    )
+
+
+def _subtree_has_history(path: str, history_paths: set[str]) -> bool:
+    return any(
+        hist == path or _is_descendant_path(hist, path) for hist in history_paths
+    )
+
+
+def _subtree_members(root: Directory, directories: list[Directory]) -> list[Directory]:
+    return [
+        directory
+        for directory in directories
+        if directory.path == root.path or _is_descendant_path(directory.path, root.path)
+    ]
+
+
+def _archive_subtree(
+    root: Directory, directories: list[Directory], handled: set[int]
+) -> int:
+    archived = 0
+    for directory in _subtree_members(root, directories):
+        if directory.id in handled:
+            continue
+        handled.add(directory.id)
+        if directory.status != DirectoryStatus.missing:
+            directory.status = DirectoryStatus.missing
+            archived += 1
+    return archived
+
+
+def _delete_subtree(
+    session: Session,
+    root: Directory,
+    directories: list[Directory],
+    handled: set[int],
+) -> int:
+    members = [d for d in _subtree_members(root, directories) if d.id not in handled]
+    # Deepest-first ORM delete — a single well-defined path, not raw FK cascade.
+    for directory in sorted(members, key=lambda d: d.depth, reverse=True):
+        handled.add(directory.id)
+        session.delete(directory)
+    return len(members)

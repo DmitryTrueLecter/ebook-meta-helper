@@ -44,6 +44,9 @@ class TestTransitionPredicate:
             (FileStatus.enriched, FileStatus.missing),
             (FileStatus.failed, FileStatus.missing),
             (FileStatus.missing, FileStatus.read),
+            # discover re-reads a changed `read` file, and reads a reappeared `missing` one
+            (FileStatus.read, FileStatus.reading),
+            (FileStatus.missing, FileStatus.reading),
             # legacy transient path retained until DMI-124/125 strip the callers
             (FileStatus.reading, FileStatus.ai_queued),
             (FileStatus.ai_queued, FileStatus.enriching),
@@ -428,3 +431,81 @@ class TestCountByStatus:
         assert file_repo.count_by_status(session, FileStatus.pending) == 2
         assert file_repo.count_by_status(session, FileStatus.enriched) == 1
         assert file_repo.count_by_status(session, FileStatus.failed) == 0
+
+
+class TestMarkMissingUnderRoot:
+    def _file(self, session, directory, filename, status):
+        record = FileRecord(directory_id=directory.id, filename=filename, status=status)
+        session.add(record)
+        session.flush()
+        return record
+
+    def test_absent_reconcilable_file_marked_missing(self, session):
+        d = _new_directory(session, "/books/sci")
+        present = self._file(session, d, "here.fb2", FileStatus.read)
+        gone = self._file(session, d, "gone.fb2", FileStatus.read)
+
+        marked = file_repo.mark_missing_under_root(
+            session, "/books/sci", {"/books/sci/here.fb2"}
+        )
+        session.flush()
+
+        assert marked == 1
+        assert session.get(FileRecord, gone.id).status == FileStatus.missing
+        assert session.get(FileRecord, present.id).status == FileStatus.read
+
+    def test_accepted_and_in_flight_never_marked(self, session):
+        d = _new_directory(session, "/books/sci")
+        accepted = self._file(session, d, "accepted.fb2", FileStatus.accepted)
+        rejected = self._file(session, d, "rejected.fb2", FileStatus.rejected)
+        reading = self._file(session, d, "reading.fb2", FileStatus.reading)
+
+        marked = file_repo.mark_missing_under_root(session, "/books/sci", set())
+        session.flush()
+
+        assert marked == 0
+        assert session.get(FileRecord, accepted.id).status == FileStatus.accepted
+        assert session.get(FileRecord, rejected.id).status == FileStatus.rejected
+        assert session.get(FileRecord, reading.id).status == FileStatus.reading
+
+    def test_sibling_prefix_directory_not_cross_matched(self, session):
+        sci = _new_directory(session, "/books/sci")
+        science = _new_directory(session, "/books/science")
+        in_scope = self._file(session, sci, "a.fb2", FileStatus.read)
+        sibling = self._file(session, science, "b.fb2", FileStatus.read)
+
+        # Reconcile only the /books/sci subtree with an empty present-set.
+        marked = file_repo.mark_missing_under_root(session, "/books/sci", set())
+        session.flush()
+
+        assert marked == 1
+        assert session.get(FileRecord, in_scope.id).status == FileStatus.missing
+        # /books/science is a sibling prefix — it must NOT be touched.
+        assert session.get(FileRecord, sibling.id).status == FileStatus.read
+
+    def test_underscore_in_root_not_treated_as_wildcard(self, session):
+        """A literal `_` in the root path must not match arbitrary chars via LIKE."""
+        scoped_child = _new_directory(session, "/books/sci_fi/sub")
+        decoy_child = _new_directory(session, "/books/sciXfi/sub")
+        in_scope = self._file(session, scoped_child, "a.fb2", FileStatus.read)
+        out_of_scope = self._file(session, decoy_child, "b.fb2", FileStatus.read)
+
+        # Unescaped, `/books/sci_fi/%` would also match `/books/sciXfi/sub` (`_` = any char).
+        marked = file_repo.mark_missing_under_root(session, "/books/sci_fi", set())
+        session.flush()
+
+        assert marked == 1
+        assert session.get(FileRecord, in_scope.id).status == FileStatus.missing
+        assert session.get(FileRecord, out_of_scope.id).status == FileStatus.read
+
+    def test_enriched_and_failed_are_reconcilable(self, session):
+        d = _new_directory(session, "/books/sci")
+        enriched = self._file(session, d, "enriched.fb2", FileStatus.enriched)
+        failed = self._file(session, d, "failed.fb2", FileStatus.failed)
+
+        marked = file_repo.mark_missing_under_root(session, "/books/sci", set())
+        session.flush()
+
+        assert marked == 2
+        assert session.get(FileRecord, enriched.id).status == FileStatus.missing
+        assert session.get(FileRecord, failed.id).status == FileStatus.missing

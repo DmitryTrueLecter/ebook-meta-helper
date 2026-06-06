@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
+from db.repos._query_utils import subtree_clause
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,12 @@ _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
         {FileStatus.read, FileStatus.ai_queued, FileStatus.enriched, FileStatus.failed}
     ),
     FileStatus.read: frozenset(
-        {FileStatus.analyze_queued, FileStatus.failed, FileStatus.missing}
+        {
+            FileStatus.reading,
+            FileStatus.analyze_queued,
+            FileStatus.failed,
+            FileStatus.missing,
+        }
     ),
     FileStatus.ai_queued: frozenset({FileStatus.enriching, FileStatus.failed}),
     FileStatus.analyze_queued: frozenset(
@@ -66,7 +72,7 @@ _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
             FileStatus.missing,
         }
     ),
-    FileStatus.missing: frozenset({FileStatus.read}),
+    FileStatus.missing: frozenset({FileStatus.reading, FileStatus.read}),
 }
 
 
@@ -218,3 +224,36 @@ def count_by_status(session: Session, status: FileStatus) -> int:
     """Return the total number of FileRecord rows in a given status."""
     stmt = select(func.count()).select_from(FileRecord).where(FileRecord.status == status)
     return int(session.execute(stmt).scalar_one())
+
+
+# A file in any of these states left disk *unexpectedly*; `accepted`/`rejected`
+# moved on purpose and in-flight rows are mid-transition, so neither is missing.
+_RECONCILABLE_TO_MISSING = (
+    FileStatus.read,
+    FileStatus.enriched,
+    FileStatus.failed,
+)
+
+
+def mark_missing_under_root(
+    session: Session, root_path: str, present_paths: set[str]
+) -> int:
+    """Mark reconcilable files under `root_path` whose on-disk path is absent as `missing`."""
+    rows = session.execute(
+        select(FileRecord, Directory.path)
+        .join(Directory, FileRecord.directory_id == Directory.id)
+        .where(
+            subtree_clause(root_path),
+            FileRecord.status.in_(_RECONCILABLE_TO_MISSING),
+        )
+    ).all()
+
+    marked = 0
+    for record, directory_path in rows:
+        full_path = directory_path + "/" + record.filename
+        if full_path in present_paths:
+            continue
+        update_status(session, record.id, FileStatus.missing)
+        marked += 1
+    session.flush()
+    return marked

@@ -1,4 +1,4 @@
-"""Directory tree, directory detail with file list, and scan-trigger endpoints."""
+"""Directory tree, directory detail with file list, and discover-trigger endpoint."""
 
 from __future__ import annotations
 
@@ -24,12 +24,20 @@ router = APIRouter(prefix="/api/directories", tags=["directories"])
 
 
 @router.get("", response_model=list[DirectoryNode])
-def list_directory_tree(db: Session = Depends(get_db)) -> list[DirectoryNode]:
-    """Full directory tree rooted at every depth-0 row, with per-directory counts."""
-    directories = directory_repo.get_tree(db)
+def list_directory_tree(
+    include_missing: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> list[DirectoryNode]:
+    """Directory tree with per-directory counts; archived (`missing`) directories hidden unless `include_missing`."""
+    directories = (
+        directory_repo.get_tree_including_missing(db)
+        if include_missing
+        else directory_repo.get_tree(db)
+    )
     stats_by_id = directory_repo.get_status_counts(db)
-    roots = [d for d in directories if d.parent_id is None]
-    return [_to_node(root, stats_by_id) for root in roots]
+    visible_ids = {d.id for d in directories}
+    roots = [d for d in directories if d.parent_id is None or d.parent_id not in visible_ids]
+    return [_to_node(root, stats_by_id, visible_ids) for root in roots]
 
 
 @router.get("/{directory_id}", response_model=DirectoryDetail)
@@ -53,14 +61,14 @@ def get_directory_detail(
 
 
 @router.post(
-    "/{directory_id}/scan",
+    "/{directory_id}/discover",
     response_model=ScanJobProgress,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def trigger_directory_scan(
+def trigger_directory_discover(
     directory_id: int, db: Session = Depends(get_db)
 ) -> ScanJobProgress:
-    """Enqueue a scan + enrichment job for the directory; watcher picks up `pending` rows."""
+    """Enqueue a discover job (FS↔DB sync + read file metadata, NO AI); watcher runs it."""
     directory = directory_repo.get_by_id(db, directory_id)
     if directory is None:
         raise HTTPException(
@@ -72,7 +80,7 @@ def trigger_directory_scan(
     if active is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Scan job {active.id} is already {active.status.value}",
+            detail=f"Discover job {active.id} is already {active.status.value}",
         )
 
     job = scan_job_repo.create(
@@ -102,9 +110,17 @@ def _list_files(
     return [_to_list_item(record, has_ai=record.id in ai_ids) for record in records]
 
 
-def _to_node(directory: Directory, stats_by_id: dict[int, DirectoryStats]) -> DirectoryNode:
+def _to_node(
+    directory: Directory,
+    stats_by_id: dict[int, DirectoryStats],
+    visible_ids: set[int],
+) -> DirectoryNode:
     stats = directory_repo.stats_for(stats_by_id, directory.id)
-    children = [_to_node(child, stats_by_id) for child in directory.children]
+    children = [
+        _to_node(child, stats_by_id, visible_ids)
+        for child in directory.children
+        if child.id in visible_ids
+    ]
     return DirectoryNode(
         id=directory.id,
         name=directory.name,

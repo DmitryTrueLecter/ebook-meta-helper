@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from db.models.directory import Directory
-from db.models.file_record import FileStatus
+from db.models.directory import Directory, DirectoryStatus
+from db.models.file_record import FileRecord, FileStatus
 from db.repos import directory_repo, file_repo
 from db.repos.directory_repo import DirectoryInput, DirectoryStats
 from db.repos.file_repo import FileAttrs
@@ -187,3 +187,101 @@ class TestStatsFor:
     def test_returns_zeroed_stats_when_missing(self):
         result = directory_repo.stats_for({}, directory_id=7)
         assert result == DirectoryStats(0, 0, 0, 0, 0)
+
+
+class TestGetTreeIncludeMissing:
+    def test_archived_directory_hidden_by_default(self, session):
+        active = directory_repo.get_or_create(session, _spec("/lib", "lib"))
+        archived = directory_repo.get_or_create(session, _spec("/lib/old", "old"))
+        archived.status = DirectoryStatus.missing
+        session.flush()
+
+        default_paths = {d.path for d in directory_repo.get_tree(session)}
+        all_paths = {d.path for d in directory_repo.get_tree_including_missing(session)}
+
+        assert active.path in default_paths
+        assert archived.path not in default_paths
+        assert archived.path in all_paths
+
+
+class TestReconcileMissingDirectories:
+    def _dir(self, session, path, status=DirectoryStatus.active, depth=0):
+        d = Directory(path=path, name=path.rsplit("/", 1)[-1], depth=depth, status=status)
+        session.add(d)
+        session.flush()
+        return d
+
+    def _file(self, session, directory, filename, status):
+        record = FileRecord(directory_id=directory.id, filename=filename, status=status)
+        session.add(record)
+        session.flush()
+        return record
+
+    def test_history_free_gone_directory_hard_deleted(self, session):
+        root = self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/gone", depth=1)
+        self._file(session, gone, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib"}
+        )
+
+        assert result.deleted == 1
+        assert result.archived == 0
+        assert session.get(Directory, gone.id) is None
+        assert session.get(Directory, root.id) is not None
+
+    def test_history_bearing_gone_directory_archived(self, session):
+        root = self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/keep-history", depth=1)
+        self._file(session, gone, "x.fb2", FileStatus.accepted)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib"}
+        )
+
+        assert result.archived == 1
+        assert result.deleted == 0
+        session.refresh(gone)
+        assert gone.status == DirectoryStatus.missing
+
+    def test_nested_gone_subtree_deleted_bottom_up(self, session):
+        root = self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/gone", depth=1)
+        deeper = self._dir(session, "/lib/gone/deeper", depth=2)
+        self._file(session, deeper, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib"}
+        )
+
+        assert result.deleted == 2
+        assert session.get(Directory, gone.id) is None
+        assert session.get(Directory, deeper.id) is None
+
+    def test_reappeared_directory_recovered_to_active(self, session):
+        self._dir(session, "/lib")
+        archived = self._dir(session, "/lib/back", status=DirectoryStatus.missing, depth=1)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib", "/lib/back"}
+        )
+
+        assert result.recovered == 1
+        session.refresh(archived)
+        assert archived.status == DirectoryStatus.active
+
+    def test_gone_parent_with_live_child_left_active(self, session):
+        self._dir(session, "/lib")
+        parent = self._dir(session, "/lib/parent", depth=1)
+        self._dir(session, "/lib/parent/live", depth=2)
+
+        # parent is gone from disk, but its child still exists.
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib", "/lib/parent/live"}
+        )
+
+        assert "/lib/parent" in result.live_child_anomalies
+        session.refresh(parent)
+        assert parent.status == DirectoryStatus.active
+        assert session.get(Directory, parent.id) is not None
