@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -171,6 +172,17 @@ class DirectoryReconcileResult:
     live_child_anomalies: tuple[str, ...]
 
 
+def _norm_path(path: str) -> str:
+    """Canonicalize a path for comparison: collapse '//', '/./', and any trailing '/'.
+
+    Lexical only — does NOT resolve symlinks, so it is filesystem-independent and safe to
+    run anywhere (prod, tests). This makes the FS↔DB reconcile robust to textual format
+    drift between the scanner's output and historically-stored Directory.path values —
+    the mismatch that previously caused an entire on-disk tree to be retired at once.
+    """
+    return os.path.normpath(path)
+
+
 def _is_descendant_path(candidate: str, ancestor: str) -> bool:
     return candidate.startswith(ancestor + "/")
 
@@ -185,10 +197,29 @@ def reconcile_missing_directories(
         ).scalars()
     )
     history_paths = _directory_paths_with_history(session, root_path)
+    present_norm = {_norm_path(p) for p in present_dir_paths}
 
-    recovered = _recover_reappeared(directories, present_dir_paths)
+    recovered = _recover_reappeared(directories, present_norm)
+
+    # SAFETY GUARD against catastrophic mass-retire.
+    # A healthy scan of an existing tree always re-finds the directories still on disk.
+    # If the scan reported paths but NONE of the DB directories under root match any of
+    # them, the two sides are out of textual sync (legacy path format, or a partial/failed
+    # scan) — NOT a real "everything was deleted from disk". Retiring here would wipe the
+    # whole subtree (the production incident). Refuse: recovery already ran (non-destructive),
+    # retire is skipped and the mismatch is surfaced as an anomaly for the operator.
+    if directories and present_norm and all(
+        _norm_path(d.path) not in present_norm for d in directories
+    ):
+        return DirectoryReconcileResult(
+            deleted=0,
+            archived=0,
+            recovered=recovered,
+            live_child_anomalies=(f"retire-skipped:path-mismatch:{root_path}",),
+        )
+
     deleted, archived, anomalies = _retire_gone_directories(
-        session, directories, present_dir_paths, history_paths
+        session, directories, present_norm, history_paths
     )
     session.flush()
     return DirectoryReconcileResult(
@@ -218,7 +249,7 @@ def _recover_reappeared(
 ) -> int:
     recovered = 0
     for directory in directories:
-        if directory.path in present_dir_paths and directory.status == DirectoryStatus.missing:
+        if _norm_path(directory.path) in present_dir_paths and directory.status == DirectoryStatus.missing:
             directory.status = DirectoryStatus.active
             recovered += 1
     return recovered
@@ -236,7 +267,7 @@ def _retire_gone_directories(
     handled: set[int] = set()
     # Deepest-first so a gone child is retired before its gone parent's subtree is processed.
     for directory in sorted(directories, key=lambda d: d.depth, reverse=True):
-        if directory.id in handled or directory.path in present_dir_paths:
+        if directory.id in handled or _norm_path(directory.path) in present_dir_paths:
             continue
         if _has_live_descendant(directory.path, directories, present_dir_paths):
             anomalies.append(directory.path)
@@ -252,7 +283,7 @@ def _has_live_descendant(
     path: str, directories: list[Directory], present_dir_paths: set[str]
 ) -> bool:
     return any(
-        _is_descendant_path(other.path, path) and other.path in present_dir_paths
+        _is_descendant_path(other.path, path) and _norm_path(other.path) in present_dir_paths
         for other in directories
     )
 

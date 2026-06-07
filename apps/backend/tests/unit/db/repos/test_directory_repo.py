@@ -285,3 +285,57 @@ class TestReconcileMissingDirectories:
         session.refresh(parent)
         assert parent.status == DirectoryStatus.active
         assert session.get(Directory, parent.id) is not None
+
+    # --- Regression: production incident where discover wiped the whole existing tree ---
+    # The scanner reports filesystem paths in a normalized/resolved form. Directory rows
+    # created by an earlier scanner store the same dirs in a slightly different textual
+    # form (trailing slash, non-normalized). The retire logic compared paths by exact
+    # string, so a dir that was STILL ON DISK looked "gone" and was deleted/archived.
+
+    def test_present_directory_in_different_path_format_is_not_retired(self, session):
+        # Dir is on disk; scanner reports it with a trailing slash. Must survive untouched.
+        root = self._dir(session, "/lib")
+        kept = self._dir(session, "/lib/scifi", depth=1)
+        self._file(session, kept, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib/", "/lib/scifi/"}
+        )
+
+        assert result.deleted == 0
+        assert result.archived == 0
+        assert session.get(Directory, kept.id) is not None
+
+    def test_total_path_format_mismatch_does_not_wipe_tree(self, session):
+        # The incident: every stored path is in a format that does not string-match the
+        # scanner's output, yet all dirs are still on disk. The whole tree must survive —
+        # history-free dirs must NOT be hard-deleted, history-bearing must NOT be archived.
+        self._dir(session, "/books")
+        a = self._dir(session, "/books/a", depth=1)
+        b = self._dir(session, "/books/b", depth=1)
+        self._file(session, a, "x.fb2", FileStatus.read)
+        self._file(session, b, "y.fb2", FileStatus.accepted)  # history-bearing
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/books", {"/books/", "/books/a/", "/books/b/"}
+        )
+
+        assert result.deleted == 0
+        assert result.archived == 0
+        assert session.get(Directory, a.id) is not None
+        session.refresh(b)
+        assert b.status == DirectoryStatus.active
+
+    def test_genuinely_gone_directory_still_retired_after_normalization(self, session):
+        # Guard against over-correction: a dir truly absent from disk must still be retired,
+        # even when present paths arrive in non-normalized form.
+        self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/gone", depth=1)
+        self._file(session, gone, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib/"}  # only root present, /lib/gone is absent
+        )
+
+        assert result.deleted == 1
+        assert session.get(Directory, gone.id) is None
