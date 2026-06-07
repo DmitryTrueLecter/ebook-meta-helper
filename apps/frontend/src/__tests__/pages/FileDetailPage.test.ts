@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
 import FileDetailPage from '@/pages/FileDetailPage.vue'
 import * as api from '@/services/api'
+import { ApiError } from '@/services/api'
 import type {
   EnrichmentTriggerResponse,
   FileDetail,
@@ -474,6 +475,133 @@ describe('FileDetailPage — analyze + polling', () => {
     await vi.advanceTimersByTimeAsync(4000)
     // No poll fired — getFileDetail count unchanged from the initial mount fetch.
     expect(detailSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('FileDetailPage — Analyze gated by status', () => {
+  let testRouter: Router
+
+  beforeEach(() => {
+    testRouter = buildTestRouter()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function findAnalyzeButton(wrapper: ReturnType<typeof mount>) {
+    return wrapper.findAll('button').find((b) => b.text().includes('Анализировать'))
+  }
+
+  const ALLOWED: FileStatus[] = ['read', 'enriched', 'accepted', 'rejected', 'failed']
+  const BLOCKED: FileStatus[] = ['pending', 'reading', 'analyze_queued', 'enriching', 'missing']
+
+  it.each(ALLOWED)('renders an enabled Analyze button for allowed status "%s"', async (status) => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status }))
+
+    const wrapper = await mountAt(testRouter, '/files/7')
+    await flushPromises()
+
+    const analyzeBtn = findAnalyzeButton(wrapper)
+    expect(analyzeBtn).toBeDefined()
+    expect(analyzeBtn?.attributes('disabled')).toBeUndefined()
+  })
+
+  it.each(BLOCKED)('does not render an Analyze button for blocked status "%s"', async (status) => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status, ai_metadata: null }))
+
+    const wrapper = await mountAt(testRouter, '/files/7')
+    await flushPromises()
+
+    expect(findAnalyzeButton(wrapper)).toBeUndefined()
+  })
+
+  it('does not call enrichFile when the file is in a blocked status (no actionable button)', async () => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({ status: 'pending', ai_metadata: null }),
+    )
+    const enrichSpy = vi.spyOn(api, 'enrichFile')
+
+    const wrapper = await mountAt(testRouter, '/files/7')
+    await flushPromises()
+
+    expect(findAnalyzeButton(wrapper)).toBeUndefined()
+    expect(enrichSpy).not.toHaveBeenCalled()
+  })
+
+  it.each<FileStatus>(['pending', 'reading'])(
+    'shows the awaiting-read message for "%s"',
+    async (status) => {
+      vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status, ai_metadata: null }))
+
+      const wrapper = await mountAt(testRouter, '/files/7')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('ожидает чтения метаданных')
+    },
+  )
+
+  it('shows the missing-on-disk message for missing', async () => {
+    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
+      fileDetail({ status: 'missing', ai_metadata: null }),
+    )
+
+    const wrapper = await mountAt(testRouter, '/files/7')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('файл отсутствует на диске')
+  })
+
+  it.each<FileStatus>(['analyze_queued', 'enriching'])(
+    'shows the existing in-queue indicator for "%s"',
+    async (status) => {
+      vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status, ai_metadata: null }))
+
+      const wrapper = await mountAt(testRouter, '/files/7')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('AI analysis in queue')
+      expect(findAnalyzeButton(wrapper)).toBeUndefined()
+    },
+  )
+})
+
+describe('FileDetailPage — defensive 409 on enrich', () => {
+  let testRouter: Router
+
+  beforeEach(() => {
+    testRouter = buildTestRouter()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('surfaces the backend 409 message and refreshes the file status', async () => {
+    const detailSpy = vi
+      .spyOn(api, 'getFileDetail')
+      .mockResolvedValue(fileDetail({ status: 'read', ai_metadata: null }))
+    const conflict = new ApiError(
+      409,
+      'Conflict',
+      'Invalid file status transition: pending -> analyze_queued',
+    )
+    vi.spyOn(api, 'enrichFile').mockRejectedValue(conflict)
+
+    const wrapper = await mountAt(testRouter, '/files/7')
+    await flushPromises()
+    expect(detailSpy).toHaveBeenCalledTimes(1)
+
+    // After the conflict the server reports the file is actually pending — Analyze must vanish.
+    detailSpy.mockResolvedValueOnce(fileDetail({ status: 'pending', ai_metadata: null }))
+
+    const analyzeBtn = wrapper.findAll('button').find((b) => b.text().includes('Анализировать'))
+    await analyzeBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Invalid file status transition')
+    expect(detailSpy).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAll('button').find((b) => b.text().includes('Анализировать'))).toBeUndefined()
   })
 })
 

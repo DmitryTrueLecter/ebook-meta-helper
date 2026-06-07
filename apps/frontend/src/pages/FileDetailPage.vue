@@ -6,7 +6,7 @@ import MetadataDiffPanel from '@/components/MetadataDiffPanel.vue'
 import ProcessingLogTimeline from '@/components/ProcessingLogTimeline.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Button } from '@/components/ui/button'
-import { useAnalyzePolling, isAnalyzeInFlight } from '@/composables/useAnalyzePolling'
+import { useAnalyzePolling, isAnalyzeAllowed, isAnalyzeInFlight } from '@/composables/useAnalyzePolling'
 import { buildDiffRows } from '@/composables/useMetadataDiff'
 import { acceptFile, getFileDetail, getFileLogs, rejectFile } from '@/services/api'
 import type { FileDetail, FileStatus, ProcessingLogEntry } from '@/types'
@@ -65,12 +65,21 @@ const decisionDisabled = computed(() => {
   return TERMINAL_STATUSES.has(detail.value.status)
 })
 
+// Analyze is offered only for statuses the backend's enrich transition accepts.
+const analyzeAllowed = computed(() => isAnalyzeAllowed(status.value))
+
 const analyzeDisabled = computed(() => {
   if (!detail.value || actionInFlight.value !== null) {
     return true
   }
   return analyzeInProgress.value
 })
+
+const NOT_READABLE_STATUSES = new Set<FileStatus>(['pending', 'reading'])
+const isAwaitingRead = computed(
+  () => status.value !== null && NOT_READABLE_STATUSES.has(status.value),
+)
+const isMissing = computed(() => status.value === 'missing')
 
 const analyzeLabel = computed(() => {
   if (analyzeInProgress.value) {
@@ -165,6 +174,10 @@ async function onAnalyze(): Promise<void> {
   if (analyze.error.value !== null) {
     flashToast('error', analyze.error.value)
   }
+  // 409 means the file's status drifted out of the allowed set server-side; re-fetch so the stale Analyze button disappears.
+  if (analyze.conflicted.value) {
+    await loadDetail()
+  }
 }
 
 onMounted(loadDetail)
@@ -229,13 +242,29 @@ const toastClasses: Record<ToastTone, string> = {
       AI analysis in queue — this file is being analyzed…
     </p>
 
+    <p
+      v-else-if="detail && isAwaitingRead"
+      role="status"
+      class="text-sm text-muted-foreground"
+    >
+      ожидает чтения метаданных
+    </p>
+
+    <p
+      v-else-if="detail && isMissing"
+      role="status"
+      class="text-sm text-orange-700 dark:text-orange-300"
+    >
+      файл отсутствует на диске
+    </p>
+
     <p v-if="detail && isFailed" class="text-sm text-destructive">
       AI analysis failed.<span v-if="detail.error_message"> {{ detail.error_message }}</span>
       Use “Анализировать заново” to retry.
     </p>
 
     <div v-if="detail" class="flex flex-wrap gap-2">
-      <Button variant="default" :disabled="analyzeDisabled" @click="onAnalyze">
+      <Button v-if="analyzeAllowed" variant="default" :disabled="analyzeDisabled" @click="onAnalyze">
         {{ analyzeLabel }}
       </Button>
       <Button variant="secondary" :disabled="decisionDisabled" @click="onAccept">
