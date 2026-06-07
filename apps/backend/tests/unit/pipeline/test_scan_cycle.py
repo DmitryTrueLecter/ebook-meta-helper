@@ -339,3 +339,76 @@ class TestSessionPolicy:
 
         # Policy: many short sessions, not one long-held. Walk + per-file reads + reconcile.
         assert open_count >= 8
+
+
+class TestDiscoverRecoversDamagedTree:
+    """End-to-end proof that a re-discover REPOPULATES the tree after the path-mismatch
+    incident damaged it. Reproduces the post-incident DB state — one directory archived
+    (status=missing) and one hard-deleted — then runs discover against the unchanged
+    on-disk tree and asserts both are restored.
+    """
+
+    def test_rediscover_recovers_archived_and_recreates_deleted_dirs(
+        self, tmp_path, session_factory, inspect_session
+    ):
+        root = _make_book_tree(tmp_path, {"sci-fi": ["a.fb2"], "history": ["b.fb2"]})
+        scifi_path = str((root / "sci-fi").resolve())
+        history_path = str((root / "history").resolve())
+
+        # 1) Healthy first discover populates the tree.
+        with _patched_read(), _no_enrich_guard():
+            run_scan_cycle(
+                _running_job(session_factory, str(root)),
+                str(root),
+                session_factory=session_factory,
+            )
+        inspect_session.expire_all()
+        assert (
+            inspect_session.query(Directory).filter(Directory.path == scifi_path).one_or_none()
+            is not None
+        )
+        assert (
+            inspect_session.query(Directory).filter(Directory.path == history_path).one_or_none()
+            is not None
+        )
+
+        # 2) Simulate the incident damage: archive 'sci-fi', hard-delete 'history'.
+        with session_factory() as s:
+            scifi = s.query(Directory).filter(Directory.path == scifi_path).one()
+            scifi.status = DirectoryStatus.missing
+            hist = s.query(Directory).filter(Directory.path == history_path).one()
+            s.query(FileRecord).filter(FileRecord.directory_id == hist.id).delete()
+            s.delete(hist)
+
+        inspect_session.expire_all()
+        assert (
+            inspect_session.query(Directory).filter(Directory.path == history_path).one_or_none()
+            is None
+        )
+        assert (
+            inspect_session.query(Directory).filter(Directory.path == scifi_path).one().status
+            == DirectoryStatus.missing
+        )
+
+        # 3) Re-discover the same root (files still on disk).
+        with _patched_read(), _no_enrich_guard():
+            run_scan_cycle(
+                _running_job(session_factory, str(root)),
+                str(root),
+                session_factory=session_factory,
+            )
+
+        # 4) Tree whole again: archived recovered to active, deleted re-created from disk.
+        inspect_session.expire_all()
+        scifi_after = (
+            inspect_session.query(Directory).filter(Directory.path == scifi_path).one()
+        )
+        assert scifi_after.status == DirectoryStatus.active, (
+            "archived directory must recover to active on re-discover"
+        )
+        history_after = (
+            inspect_session.query(Directory).filter(Directory.path == history_path).one_or_none()
+        )
+        assert history_after is not None, (
+            "hard-deleted directory must be re-created from disk on re-discover"
+        )

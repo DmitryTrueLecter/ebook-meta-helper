@@ -24,7 +24,7 @@ EXPECTED_TABLES = {
     "processing_logs",
     "scan_jobs",
 }
-EXPECTED_REVISIONS = ("001", "002", "003", "004", "005", "006", "007", "008")
+EXPECTED_REVISIONS = ("001", "002", "003", "004", "005", "006", "007", "008", "009")
 
 
 def _run_alembic(*args: str) -> str:
@@ -199,10 +199,14 @@ class TestMetadataDDL:
         block = _table_block(upgrade_sql, "metadata")
         assert "data JSON NOT NULL" in block
 
-    def test_isbn_char_columns(self, upgrade_sql):
+    def test_isbn_columns_created_char_then_widened(self, upgrade_sql):
+        # 005 creates the columns as CHAR; 009 widens them to VARCHAR(20) so
+        # separator-bearing real-world ISBNs fit (DMI-139).
         block = _table_block(upgrade_sql, "metadata")
         assert "isbn13 CHAR(13)" in block
         assert "isbn10 CHAR(10)" in block
+        assert "ALTER TABLE metadata MODIFY isbn13 VARCHAR(20)" in upgrade_sql
+        assert "ALTER TABLE metadata MODIFY isbn10 VARCHAR(20)" in upgrade_sql
 
     def test_fks(self, upgrade_sql):
         assert (
@@ -257,6 +261,13 @@ class TestProcessingLogsDDL:
     def test_datetime_fsp3(self, upgrade_sql):
         block = _table_block(upgrade_sql, "processing_logs")
         assert "created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)" in block
+
+    def test_message_widened_to_text(self, upgrade_sql):
+        # 006 creates message as VARCHAR(1024); 009 widens it to TEXT so the wrapped
+        # DataError + SQL text from a failed insert fits without a second crash (DMI-139).
+        block = _table_block(upgrade_sql, "processing_logs")
+        assert "message VARCHAR(1024)" in block
+        assert "ALTER TABLE processing_logs MODIFY message TEXT" in upgrade_sql
 
     def test_indexes(self, upgrade_sql):
         assert (

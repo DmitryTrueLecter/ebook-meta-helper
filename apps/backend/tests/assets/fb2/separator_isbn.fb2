@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook>
+  <description>
+    <title-info>
+      <book-title>Separator ISBN Book</book-title>
+      <author><first-name>Author</first-name><last-name>Sep</last-name></author>
+    </title-info>
+    <publish-info>
+      <isbn>978-0-306-40615-7</isbn>
+    </publish-info>
+  </description>
+</FictionBook>

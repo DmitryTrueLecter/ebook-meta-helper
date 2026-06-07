@@ -6,7 +6,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, Text, func
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,7 +52,7 @@ class ProcessingLog(Base):
         default=ProcessingLogLevel.info,
         server_default=ProcessingLogLevel.info.value,
     )
-    message: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     details: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
