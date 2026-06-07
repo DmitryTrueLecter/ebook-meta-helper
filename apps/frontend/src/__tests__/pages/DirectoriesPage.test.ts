@@ -12,10 +12,12 @@ function makeNode(overrides: Partial<DirectoryNode> = {}): DirectoryNode {
     name: 'root',
     path: '/lib',
     depth: 0,
+    status: 'active',
     file_count: 0,
     pending_count: 0,
     enriched_count: 0,
     accepted_count: 0,
+    missing_count: 0,
     children: [],
     ...overrides,
   }
@@ -45,12 +47,30 @@ describe('DirectoriesPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('calls listDirectories on mount', async () => {
+  it('calls listDirectories on mount without missing directories', async () => {
     const spy = vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    const missingSpy = vi.spyOn(api, 'listDirectoriesIncludingMissing').mockResolvedValue([])
 
     mount(DirectoriesPage, { global: { plugins: [testRouter] } })
     await flushPromises()
 
+    expect(spy).toHaveBeenCalledOnce()
+    expect(missingSpy).not.toHaveBeenCalled()
+  })
+
+  it('re-fetches via listDirectoriesIncludingMissing when the "show missing" toggle is checked', async () => {
+    const spy = vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+    const missingSpy = vi.spyOn(api, 'listDirectoriesIncludingMissing').mockResolvedValue([])
+
+    const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
+    await flushPromises()
+    expect(spy).toHaveBeenCalledOnce()
+    expect(missingSpy).not.toHaveBeenCalled()
+
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await flushPromises()
+
+    expect(missingSpy).toHaveBeenCalledOnce()
     expect(spy).toHaveBeenCalledOnce()
   })
 
@@ -102,6 +122,28 @@ describe('DirectoriesPage', () => {
 
     expect(wrapper.text()).toContain('fiction')
     expect(wrapper.text()).toContain('sci-fi')
+  })
+
+  it('hides missing child directories until the "show missing" toggle is checked', async () => {
+    const treeWithMissingChild = [
+      makeNode({
+        id: 1,
+        name: 'fiction',
+        children: [makeNode({ id: 2, name: 'archived-sub', status: 'missing' })],
+      }),
+    ]
+    vi.spyOn(api, 'listDirectories').mockResolvedValue(treeWithMissingChild)
+    vi.spyOn(api, 'listDirectoriesIncludingMissing').mockResolvedValue(treeWithMissingChild)
+
+    const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('archived-sub')
+
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('archived-sub')
   })
 
   it('shows an empty state when the API returns no directories', async () => {

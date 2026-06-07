@@ -1,35 +1,42 @@
-name: Build and push image
+name: Build, push, and deploy
 
 # Triggers:
-#   - push to `dev`  → builds and pushes ghcr.io/…:sha-<short> + :dev
-#   - push of a tag  → builds and pushes ghcr.io/…:<tag>       + :latest
+#   - push to `dev`      → build + push ghcr.io/…:sha-<short> + :dev, then deploy to prod
+#   - push of semver tag → build + push ghcr.io/…:<tag>       + :latest (no deploy)
+#   - workflow_dispatch  → manual re-deploy (uses the current :dev image on the server)
 #
-# Required GitHub secrets / variables (set in repo Settings → Secrets and variables):
-#   GITHUB_TOKEN  — automatically provided; used for ghcr.io authentication.
-#                   No extra secret needed.
+# Required GitHub Secrets (Repo → Settings → Secrets and variables → Actions):
+#   DEPLOY_SSH_KEY   — private SSH key (PEM) for the CI deploy user
+#   GHCR_TOKEN       — PAT with `read:packages` scope (for server-side docker pull)
 #
-# Optional (for a one-step SSH deploy job — see the commented-out job below):
-#   DEPLOY_HOST   — hostname or IP of the production server
-#   DEPLOY_USER   — SSH user on the production server
-#   DEPLOY_KEY    — private SSH key (PEM) — store as a secret
-#   DEPLOY_DIR    — absolute path to the app directory on the server
-#                   (e.g. /srv/ebook-meta-helper)
+# Required GitHub Variables (Repo → Settings → Secrets and variables → Actions → Variables):
+#   DEPLOY_HOST      — hostname or IP of the production server
+#   DEPLOY_USER      — SSH user on the production server
+#   DEPLOY_PATH      — absolute path to the app directory on the server
+#                      (e.g. /srv/ebook-meta-helper)
 
 on:
   push:
-    branches: [main]
+    branches: [dev]
+    tags: ["v*"]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/ebook-meta-helper
 
 jobs:
-  build:
+  build-push:
     name: Build and push to GHCR
     runs-on: ubuntu-latest
+    # Skip build+push on manual dispatch — image is already on the registry.
+    if: github.event_name != 'workflow_dispatch'
     permissions:
       contents: read
       packages: write   # needed to push to ghcr.io
+
+    outputs:
+      short_sha: ${{ steps.meta.outputs.short_sha }}
 
     steps:
       - name: Checkout
@@ -45,8 +52,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Lowercase image name
-        run: echo "IMAGE_NAME=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Compute image metadata
+        id: meta
+        run: |
+          IMAGE_NAME_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME_LOWER=$IMAGE_NAME_LOWER" >> $GITHUB_ENV
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Semver tag push: <tag> + latest
+            TAG="${{ github.ref_name }}"
+            echo "TAGS=${{ env.REGISTRY }}/$IMAGE_NAME_LOWER:$TAG,${{ env.REGISTRY }}/$IMAGE_NAME_LOWER:latest" >> $GITHUB_ENV
+          else
+            # dev branch push: sha-<short> + dev
+            echo "TAGS=${{ env.REGISTRY }}/$IMAGE_NAME_LOWER:sha-$SHORT_SHA,${{ env.REGISTRY }}/$IMAGE_NAME_LOWER:dev" >> $GITHUB_ENV
+          fi
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -54,23 +74,53 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.TAGS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
-    needs: build
+    name: Deploy to production
+    needs: build-push
     runs-on: ubuntu-latest
+    # Deploy only on dev branch push (not semver tags). Also runs on workflow_dispatch
+    # (needs: is skipped on dispatch because build-push is skipped — use always() guard).
+    if: |
+      always() &&
+      (github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch') &&
+      (needs.build-push.result == 'success' || needs.build-push.result == 'skipped')
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Checkout (for docker-compose.yml)
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
         with:
-          host: ${{ vars.SSH_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd ${{ vars.DEPLOY_PATH }}
-            git pull origin main
-            docker compose pull
-            docker compose up -d
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known_hosts: unnecessary
+          if_key_exists: replace
+
+      - name: Add prod host to known_hosts
+        run: ssh-keyscan -H "${{ vars.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy docker-compose.yml to server
+        run: |
+          scp docker-compose.yml \
+            "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:${{ vars.DEPLOY_PATH }}/docker-compose.yml"
+
+      - name: Pull image and restart services
+        run: |
+          ssh "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}" "
+            set -euo pipefail
+            cd '${{ vars.DEPLOY_PATH }}'
+            echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+            IMAGE_TAG=dev docker compose pull
+            IMAGE_TAG=dev docker compose up -d --remove-orphans
+          "
+
+      - name: Verify health endpoint
+        run: |
+          sleep 10
+          curl -fsSL --max-time 10 "https://meta.dmitry.work/api/health" \
+            -o /dev/null -w "HTTP %{http_code}\n" || \
+            echo "Warning: health check returned non-200 (Basic Auth may gate the endpoint — check manually)"

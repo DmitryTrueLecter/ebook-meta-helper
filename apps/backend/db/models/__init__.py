@@ -1,7 +1,7 @@
 """SQLAlchemy table models."""
 
 from db.base import Base
-from db.models.directory import Directory
+from db.models.directory import Directory, DirectoryStatus
 from db.models.directory_hint import DirectoryHint
 from db.models.enrichment_run import (
     EnrichmentRun,
@@ -20,6 +20,7 @@ from db.models.scan_job import ScanJob, ScanJobStatus
 __all__ = [
     "Base",
     "Directory",
+    "DirectoryStatus",
     "DirectoryHint",
     "EnrichmentRun",
     "EnrichmentStatus",

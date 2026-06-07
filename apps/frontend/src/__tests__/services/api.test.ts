@@ -4,14 +4,15 @@ import {
   acceptFile,
   ApiError,
   apiFetch,
+  discoverDirectory,
   enrichFile,
   getDirectoryDetail,
   getFileDetail,
   getFileLogs,
   getScanStatus,
   listDirectories,
+  listDirectoriesIncludingMissing,
   rejectFile,
-  triggerDirectoryScan,
 } from '@/services/api'
 
 interface MockResponseInit {
@@ -166,6 +167,39 @@ describe('listDirectories', () => {
   })
 })
 
+describe('listDirectoriesIncludingMissing', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/directories?include_missing=true and returns the array', async () => {
+    const tree = [{ id: 1, name: 'root', children: [] }]
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(tree) }),
+    )
+
+    const result = await listDirectoriesIncludingMissing()
+
+    expect(result).toEqual(tree)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/directories?include_missing=true',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    )
+  })
+
+  it('throws on 204 No Content (does not silently return [])', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(listDirectoriesIncludingMissing()).rejects.toThrow(/empty response/)
+  })
+})
+
 describe('getDirectoryDetail', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
@@ -205,7 +239,7 @@ describe('getDirectoryDetail', () => {
   })
 })
 
-describe('triggerDirectoryScan', () => {
+describe('discoverDirectory', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
   })
@@ -214,18 +248,18 @@ describe('triggerDirectoryScan', () => {
     vi.unstubAllGlobals()
   })
 
-  it('POSTs /api/directories/{id}/scan and returns the job', async () => {
+  it('POSTs /api/directories/{id}/discover and returns the job', async () => {
     const job = { id: 1, status: 'queued', files_discovered: 0, files_processed: 0, current_filename: null }
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(
       mockResponse({ status: 202, json: () => Promise.resolve(job) }),
     )
 
-    const result = await triggerDirectoryScan(42)
+    const result = await discoverDirectory(42)
 
     expect(result).toEqual(job)
     const call = fetchMock.mock.calls[0]
-    expect(call?.[0]).toBe('/api/directories/42/scan')
+    expect(call?.[0]).toBe('/api/directories/42/discover')
     expect((call?.[1] as RequestInit | undefined)?.method).toBe('POST')
   })
 
@@ -233,7 +267,7 @@ describe('triggerDirectoryScan', () => {
     const fetchMock = vi.mocked(globalThis.fetch)
     fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
 
-    await expect(triggerDirectoryScan(42)).rejects.toThrow(/empty response/)
+    await expect(discoverDirectory(42)).rejects.toThrow(/empty response/)
   })
 
   it('throws on 500 with backend detail message', async () => {
@@ -243,11 +277,11 @@ describe('triggerDirectoryScan', () => {
         status: 500,
         statusText: 'Internal Server Error',
         ok: false,
-        json: () => Promise.resolve({ detail: 'scan worker offline' }),
+        json: () => Promise.resolve({ detail: 'discover worker offline' }),
       }),
     )
 
-    await expect(triggerDirectoryScan(42)).rejects.toThrow(/scan worker offline/)
+    await expect(discoverDirectory(42)).rejects.toThrow(/discover worker offline/)
   })
 })
 

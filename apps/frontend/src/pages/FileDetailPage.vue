@@ -1,19 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import MetadataDiffPanel from '@/components/MetadataDiffPanel.vue'
 import ProcessingLogTimeline from '@/components/ProcessingLogTimeline.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Button } from '@/components/ui/button'
+import { useAnalyzePolling, isAnalyzeInFlight } from '@/composables/useAnalyzePolling'
 import { buildDiffRows } from '@/composables/useMetadataDiff'
-import {
-  acceptFile,
-  enrichFile,
-  getFileDetail,
-  getFileLogs,
-  rejectFile,
-} from '@/services/api'
+import { acceptFile, getFileDetail, getFileLogs, rejectFile } from '@/services/api'
 import type { FileDetail, FileStatus, ProcessingLogEntry } from '@/types'
 
 type ToastTone = 'success' | 'info' | 'error'
@@ -35,9 +30,15 @@ const loadingDetail = ref(false)
 const loadingLogs = ref(false)
 const detailError = ref<string | null>(null)
 const logsError = ref<string | null>(null)
-const actionInFlight = ref<'accept' | 'reject' | 'enrich' | null>(null)
+const actionInFlight = ref<'accept' | 'reject' | null>(null)
 const showLogs = ref(false)
 const toast = ref<Toast | null>(null)
+
+function applyDetail(next: FileDetail): void {
+  detail.value = next
+}
+
+const analyze = useAnalyzePolling(applyDetail)
 
 const diffRows = computed(() =>
   buildDiffRows(detail.value?.file_metadata ?? null, detail.value?.ai_metadata ?? null),
@@ -50,26 +51,32 @@ const hasFile = computed(
 )
 const status = computed(() => detail.value?.status ?? null)
 
-// Terminal statuses disable Accept/Reject — re-running AI is always allowed.
+const analyzeInProgress = computed(
+  () => analyze.isAnalyzing.value || isAnalyzeInFlight(status.value),
+)
+const isFailed = computed(() => status.value === 'failed')
+
+// Accept/Reject act on an AI suggestion; disabled once the file is in a terminal state.
 const TERMINAL_STATUSES = new Set<FileStatus>(['accepted', 'rejected'])
 const decisionDisabled = computed(() => {
-  if (!detail.value) {
-    return true
-  }
-  if (!hasAi.value) {
-    return true
-  }
-  if (actionInFlight.value !== null) {
+  if (!detail.value || !hasAi.value || actionInFlight.value !== null) {
     return true
   }
   return TERMINAL_STATUSES.has(detail.value.status)
 })
 
-const enrichDisabled = computed(() => {
-  if (!detail.value) {
+const analyzeDisabled = computed(() => {
+  if (!detail.value || actionInFlight.value !== null) {
     return true
   }
-  return actionInFlight.value !== null
+  return analyzeInProgress.value
+})
+
+const analyzeLabel = computed(() => {
+  if (analyzeInProgress.value) {
+    return 'Анализируется…'
+  }
+  return hasAi.value || isFailed.value ? 'Анализировать заново' : 'Анализировать файл'
 })
 
 function flashToast(tone: ToastTone, message: string): void {
@@ -118,8 +125,8 @@ async function toggleLogs(): Promise<void> {
   }
 }
 
-async function runAction(
-  kind: 'accept' | 'reject' | 'enrich',
+async function runDecision(
+  kind: 'accept' | 'reject',
   call: (id: number) => Promise<{ status: FileStatus }>,
   successMessage: string,
   successTone: ToastTone,
@@ -143,18 +150,25 @@ async function runAction(
 }
 
 async function onAccept(): Promise<void> {
-  await runAction('accept', acceptFile, 'Accepted AI suggestion', 'success')
+  await runDecision('accept', acceptFile, 'Accepted AI suggestion', 'success')
 }
 
 async function onReject(): Promise<void> {
-  await runAction('reject', rejectFile, 'Rejected AI suggestion', 'info')
+  await runDecision('reject', rejectFile, 'Rejected AI suggestion', 'info')
 }
 
-async function onEnrich(): Promise<void> {
-  await runAction('enrich', enrichFile, 'Re-running AI enrichment', 'info')
+async function onAnalyze(): Promise<void> {
+  if (!fileIdValid) {
+    return
+  }
+  await analyze.startAnalyze(fileId)
+  if (analyze.error.value !== null) {
+    flashToast('error', analyze.error.value)
+  }
 }
 
 onMounted(loadDetail)
+onUnmounted(analyze.stop)
 
 const toastClasses: Record<ToastTone, string> = {
   success: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100',
@@ -198,19 +212,37 @@ const toastClasses: Record<ToastTone, string> = {
         side="ai"
         :rows="diffRows"
         :is-empty="!hasAi"
-        empty-message="AI has not produced a suggestion yet."
+        empty-message="No AI suggestion yet — click “Анализировать файл” to run OpenAI on this file."
       />
     </div>
 
+    <p v-if="detail" class="text-xs text-muted-foreground">
+      “Original (file)” is the metadata read from the file during discovery — always present.
+      The “AI suggestion” appears only after you run Analyze.
+    </p>
+
+    <p
+      v-if="detail && analyzeInProgress"
+      role="status"
+      class="text-sm text-blue-700 dark:text-blue-300"
+    >
+      AI analysis in queue — this file is being analyzed…
+    </p>
+
+    <p v-if="detail && isFailed" class="text-sm text-destructive">
+      AI analysis failed.<span v-if="detail.error_message"> {{ detail.error_message }}</span>
+      Use “Анализировать заново” to retry.
+    </p>
+
     <div v-if="detail" class="flex flex-wrap gap-2">
-      <Button variant="default" :disabled="decisionDisabled" @click="onAccept">
+      <Button variant="default" :disabled="analyzeDisabled" @click="onAnalyze">
+        {{ analyzeLabel }}
+      </Button>
+      <Button variant="secondary" :disabled="decisionDisabled" @click="onAccept">
         {{ actionInFlight === 'accept' ? 'Accepting…' : 'Accept' }}
       </Button>
       <Button variant="destructive" :disabled="decisionDisabled" @click="onReject">
         {{ actionInFlight === 'reject' ? 'Rejecting…' : 'Reject' }}
-      </Button>
-      <Button variant="secondary" :disabled="enrichDisabled" @click="onEnrich">
-        {{ actionInFlight === 'enrich' ? 'Queuing…' : 'Re-run AI' }}
       </Button>
     </div>
 

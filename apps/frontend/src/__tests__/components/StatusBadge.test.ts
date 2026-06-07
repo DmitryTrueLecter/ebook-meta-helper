@@ -14,12 +14,15 @@ interface StatusExpectation {
 const expectations: StatusExpectation[] = [
   { status: 'pending', classes: ['bg-gray-200', 'text-gray-800'], forbidden: ['animate-pulse', 'line-through'], label: 'pending' },
   { status: 'reading', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'reading' },
+  { status: 'read', classes: ['bg-sky-100', 'text-sky-800'], forbidden: ['animate-pulse', 'line-through'], label: 'read' },
   { status: 'ai_queued', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'AI queued' },
+  { status: 'analyze_queued', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'analyze queued' },
   { status: 'enriching', classes: ['bg-blue-100', 'text-blue-800', 'animate-pulse'], label: 'enriching' },
   { status: 'enriched', classes: ['bg-yellow-100', 'text-yellow-800'], forbidden: ['animate-pulse', 'line-through'], label: 'enriched' },
   { status: 'accepted', classes: ['bg-green-100', 'text-green-800'], forbidden: ['line-through'], label: 'accepted' },
   { status: 'rejected', classes: ['bg-gray-200', 'text-gray-600', 'line-through'], label: 'rejected' },
   { status: 'failed', classes: ['bg-red-100', 'text-red-800'], forbidden: ['animate-pulse'], label: 'failed' },
+  { status: 'missing', classes: ['bg-orange-100', 'text-orange-800'], forbidden: ['animate-pulse', 'line-through'], label: 'missing' },
 ]
 
 describe('StatusBadge', () => {

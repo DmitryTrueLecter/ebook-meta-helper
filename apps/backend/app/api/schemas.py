@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from db.models.directory import DirectoryStatus
 from db.models.file_record import FileStatus
 from db.models.scan_job import ScanJobStatus
 
@@ -20,10 +21,12 @@ class DirectoryNode(BaseModel):
     name: str
     path: str
     depth: int
+    status: DirectoryStatus
     file_count: int
     pending_count: int
     enriched_count: int
     accepted_count: int
+    missing_count: int
     children: list[DirectoryNode] = Field(default_factory=list)
 
 

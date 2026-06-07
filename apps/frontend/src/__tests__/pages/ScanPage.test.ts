@@ -12,10 +12,12 @@ function makeNode(overrides: Partial<DirectoryNode> = {}): DirectoryNode {
     name: 'root',
     path: '/lib',
     depth: 0,
+    status: 'active',
     file_count: 0,
     pending_count: 0,
     enriched_count: 0,
     accepted_count: 0,
+    missing_count: 0,
     children: [],
     ...overrides,
   }
@@ -90,7 +92,7 @@ describe('ScanPage', () => {
 
     expect(wrapper.text()).toContain('Failed to load scan state')
     expect(wrapper.text()).toContain('500 Server Error')
-    expect(wrapper.text()).not.toContain('Start Scan')
+    expect(wrapper.text()).not.toContain('Start Discover')
   })
 
   it('renders the launcher with directory options from a flattened tree', async () => {
@@ -123,10 +125,10 @@ describe('ScanPage', () => {
     const wrapper = await mountAtScanRoute()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('No directories discovered yet')
+    expect(wrapper.text()).toContain('No directories yet')
   })
 
-  it('keeps the Start Scan button disabled until a directory is selected', async () => {
+  it('keeps the Start Discover button disabled until a directory is selected', async () => {
     vi.spyOn(api, 'listDirectories').mockResolvedValue([
       makeNode({ id: 7, name: 'one', children: [] }),
     ])
@@ -135,7 +137,7 @@ describe('ScanPage', () => {
     const wrapper = await mountAtScanRoute()
     await flushPromises()
 
-    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Scan'))
+    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Discover'))
     expect(startButton).toBeTruthy()
     expect(startButton!.attributes('disabled')).toBeDefined()
 
@@ -143,20 +145,20 @@ describe('ScanPage', () => {
     expect(startButton!.attributes('disabled')).toBeUndefined()
   })
 
-  it('calls triggerDirectoryScan with the selected id when Start Scan is clicked', async () => {
+  it('calls discoverDirectory with the selected id when Start Discover is clicked', async () => {
     vi.spyOn(api, 'listDirectories').mockResolvedValue([
       makeNode({ id: 7, name: 'one', children: [] }),
     ])
     vi.spyOn(api, 'getScanStatus').mockResolvedValue(null)
     const triggerSpy = vi
-      .spyOn(api, 'triggerDirectoryScan')
+      .spyOn(api, 'discoverDirectory')
       .mockResolvedValue(makeJob({ status: 'pending', files_discovered: 0, files_processed: 0 }))
 
     const wrapper = await mountAtScanRoute()
     await flushPromises()
     await wrapper.find('select#scan-directory').setValue('7')
 
-    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Scan'))!
+    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Discover'))!
     await startButton.trigger('click')
     await flushPromises()
 
@@ -168,13 +170,13 @@ describe('ScanPage', () => {
       makeNode({ id: 7, name: 'one', children: [] }),
     ])
     vi.spyOn(api, 'getScanStatus').mockResolvedValue(null)
-    vi.spyOn(api, 'triggerDirectoryScan').mockRejectedValue(new Error('scan worker offline'))
+    vi.spyOn(api, 'discoverDirectory').mockRejectedValue(new Error('scan worker offline'))
 
     const wrapper = await mountAtScanRoute()
     await flushPromises()
     await wrapper.find('select#scan-directory').setValue('7')
 
-    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Scan'))!
+    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Discover'))!
     await startButton.trigger('click')
     await flushPromises()
 
@@ -386,12 +388,12 @@ describe('ScanPage', () => {
     expect(statusSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('starts polling after a successful Start Scan when the backend returns running', async () => {
+  it('starts polling after a successful Start Discover when the backend returns running', async () => {
     vi.spyOn(api, 'listDirectories').mockResolvedValue([
       makeNode({ id: 7, name: 'one', children: [] }),
     ])
     const statusSpy = vi.spyOn(api, 'getScanStatus').mockResolvedValue(null)
-    vi.spyOn(api, 'triggerDirectoryScan').mockResolvedValue(
+    vi.spyOn(api, 'discoverDirectory').mockResolvedValue(
       makeJob({ status: 'running', files_discovered: 0, files_processed: 0 }),
     )
 
@@ -400,7 +402,7 @@ describe('ScanPage', () => {
     expect(statusSpy).toHaveBeenCalledTimes(1)
 
     await wrapper.find('select#scan-directory').setValue('7')
-    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Scan'))!
+    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Discover'))!
     await startButton.trigger('click')
     await flushPromises()
 
@@ -463,8 +465,8 @@ describe('ScanPage', () => {
     expect(wrapper.text()).toContain('network down')
     // But the mount-time failure banner does NOT — different ref, different placement.
     expect(wrapper.text()).not.toContain('Failed to load scan state')
-    // Launcher is still rendered (Start Scan button visible).
-    expect(wrapper.text()).toContain('Start Scan')
+    // Launcher is still rendered (Start Discover button visible).
+    expect(wrapper.text()).toContain('Start Discover')
     // Last known progress is still rendered.
     expect(wrapper.text()).toContain('50 / 200')
     expect(wrapper.find('[role="progressbar"]').exists()).toBe(true)
@@ -504,7 +506,7 @@ describe('ScanPage', () => {
     expect(statusSpy).toHaveBeenCalledTimes(3)
   })
 
-  it('clears the inline poll-error when polling resumes successfully on Start Scan', async () => {
+  it('clears the inline poll-error when polling resumes successfully on Start Discover', async () => {
     vi.spyOn(api, 'listDirectories').mockResolvedValue([
       makeNode({ id: 7, name: 'one', children: [] }),
     ])
@@ -518,12 +520,12 @@ describe('ScanPage', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="scan-poll-error"]').exists()).toBe(true)
 
-    // User retries via Start Scan — successful trigger should clear the inline alert.
-    vi.spyOn(api, 'triggerDirectoryScan').mockResolvedValue(
+    // User retries via Start Discover — successful trigger should clear the inline alert.
+    vi.spyOn(api, 'discoverDirectory').mockResolvedValue(
       makeJob({ status: 'running', files_discovered: 0, files_processed: 0 }),
     )
     await wrapper.find('select#scan-directory').setValue('7')
-    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Scan'))!
+    const startButton = wrapper.findAll('button').find((b) => b.text().includes('Start Discover'))!
     await startButton.trigger('click')
     await flushPromises()
 

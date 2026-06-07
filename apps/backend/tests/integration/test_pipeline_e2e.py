@@ -17,7 +17,7 @@ from app.pipeline.scan_cycle import run_scan_cycle
 from db.repos import scan_job_repo
 from db.models.directory import Directory
 from db.models.directory_hint import DirectoryHint
-from db.models.enrichment_run import EnrichmentRun, EnrichmentStatus
+from db.models.enrichment_run import EnrichmentRun
 from db.models.file_record import FileRecord, FileStatus
 from db.models.metadata import Metadata, MetadataSource
 from db.models.processing_log import ProcessingLog, ProcessingStep
@@ -91,22 +91,23 @@ def _run_one_watch_iteration(library: Path, factory) -> scan_cycle.CycleResult:
     return run_scan_cycle(job_id, str(library), session_factory=factory)
 
 
-class TestPipelineEndToEnd:
-    """Three real ebooks land in DB with full metadata + log trail."""
+class TestDiscoverEndToEnd:
+    """Three real ebooks land in DB as `read` with file-metadata snapshots — NO AI."""
 
-    def test_scan_cycle_populates_directory_hint_files_metadata_logs(
+    def test_discover_reads_file_metadata_no_ai(
         self,
         book_library: Path,
         session: Session,
         test_session_factory,
         monkeypatch,
     ):
-        monkeypatch.setenv("AI_PROVIDER", "dummy")
+        # AI_PROVIDER absent must not matter — discover never calls OpenAI.
+        monkeypatch.delenv("AI_PROVIDER", raising=False)
 
         result = _run_one_watch_iteration(book_library, test_session_factory)
 
         assert result.files_discovered == 3
-        assert result.files_processed == 3
+        assert result.files_read == 3
         assert result.files_failed == 0
 
         directory = session.execute(
@@ -115,18 +116,17 @@ class TestPipelineEndToEnd:
         assert directory.name == "library"
         assert directory.depth is not None
 
+        # Discover writes NO directory hints (those were the dropped per-directory AI call).
         hints = session.execute(
             select(DirectoryHint).where(DirectoryHint.directory_id == directory.id)
         ).scalars().all()
-        assert len(hints) == 1
-        assert hints[0].is_current is True
-        assert hints[0].ai_model == "dummy"
+        assert hints == []
 
         files = session.execute(
             select(FileRecord).where(FileRecord.directory_id == directory.id)
         ).scalars().all()
         assert len(files) == 3
-        assert all(f.status == FileStatus.enriched for f in files)
+        assert all(f.status == FileStatus.read for f in files)
         assert {f.filename for f in files} == {
             "single_author.epub",
             "no_namespace.fb2",
@@ -138,8 +138,9 @@ class TestPipelineEndToEnd:
                 select(Metadata).where(Metadata.file_id == file_record.id)
             ).scalars().all()
             sources = {m.source for m in metadata_rows if m.is_current}
-            assert sources == {MetadataSource.file, MetadataSource.ai}, (
-                f"file {file_record.filename}: expected current `file` + `ai` rows, got {sources}"
+            # Only the `file` snapshot exists — no `ai` row during discover.
+            assert sources == {MetadataSource.file}, (
+                f"file {file_record.filename}: expected only a current `file` row, got {sources}"
             )
 
             log_steps = {
@@ -149,23 +150,21 @@ class TestPipelineEndToEnd:
                 ).scalars()
             }
             assert ProcessingStep.read_metadata in log_steps
-            assert ProcessingStep.ai_enrich in log_steps
+            assert ProcessingStep.ai_enrich not in log_steps
 
         scan_job = session.execute(
             select(ScanJob).where(ScanJob.id == result.scan_job_id)
         ).scalar_one()
         assert scan_job.status == ScanJobStatus.done
-        assert scan_job.files_processed == 3
 
-        enrichment_runs = session.execute(select(EnrichmentRun)).scalars().all()
-        assert len(enrichment_runs) == 3
-        assert all(run.status == EnrichmentStatus.done for run in enrichment_runs)
+        # No enrichment runs created by discover.
+        assert session.execute(select(EnrichmentRun)).scalars().all() == []
 
 
 class TestCrashRecovery:
     """An `enriching` row left over from a prior crash must be reset before processing."""
 
-    def test_watcher_init_resets_stalled_enriching_to_pending(
+    def test_watcher_init_resets_stalled_enriching_to_analyze_queued(
         self,
         book_library: Path,
         session: Session,
@@ -193,5 +192,5 @@ class TestCrashRecovery:
         recovered = session.execute(
             select(FileRecord).where(FileRecord.id == target.id)
         ).scalar_one()
-        assert recovered.status == FileStatus.pending
+        assert recovered.status == FileStatus.analyze_queued
         assert recovered.error_message is None

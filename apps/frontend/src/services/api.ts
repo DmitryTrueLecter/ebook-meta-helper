@@ -54,13 +54,22 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   return (await response.json()) as T
 }
 
-// GET /api/directories — full tree, roots first.
-export async function listDirectories(): Promise<DirectoryNode[]> {
-  const tree = await apiFetch<DirectoryNode[]>('/directories')
+async function fetchDirectoryTree(query: string): Promise<DirectoryNode[]> {
+  const tree = await apiFetch<DirectoryNode[]>(`/directories${query}`)
   if (tree === null) {
     throw new Error('Directories listing returned an empty response')
   }
   return tree
+}
+
+// GET /api/directories — full tree, roots first. Archived (missing) dirs excluded by the server.
+export async function listDirectories(): Promise<DirectoryNode[]> {
+  return fetchDirectoryTree('')
+}
+
+// GET /api/directories?include_missing=true — full tree including archived (missing) dirs.
+export async function listDirectoriesIncludingMissing(): Promise<DirectoryNode[]> {
+  return fetchDirectoryTree('?include_missing=true')
 }
 
 // GET /api/directories/{id} — directory + its files. Optional status filter.
@@ -76,13 +85,13 @@ export async function getDirectoryDetail(
   return detail
 }
 
-// POST /api/directories/{id}/scan — enqueue scan, returns 202 + scan-job status.
-export async function triggerDirectoryScan(id: number): Promise<ScanJobStatus> {
-  const job = await apiFetch<ScanJobStatus>(`/directories/${id}/scan`, {
+// POST /api/directories/{id}/discover — FS↔DB sync + read metadata (no AI); returns 202 + job status.
+export async function discoverDirectory(id: number): Promise<ScanJobStatus> {
+  const job = await apiFetch<ScanJobStatus>(`/directories/${id}/discover`, {
     method: 'POST',
   })
   if (job === null) {
-    throw new Error(`Scan trigger for directory ${id} returned an empty response`)
+    throw new Error(`Discover trigger for directory ${id} returned an empty response`)
   }
   return job
 }

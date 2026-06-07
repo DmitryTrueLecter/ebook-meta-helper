@@ -50,6 +50,14 @@ async function load(): Promise<void> {
   }
 }
 
+const statusCounts = computed<Array<{ status: FileStatus; count: number }>>(() => {
+  const files = directory.value?.files ?? []
+  return FILE_STATUSES.map((status) => ({
+    status,
+    count: files.filter((file) => file.status === status).length,
+  })).filter((entry) => entry.count > 0)
+})
+
 function openFile(fileId: number): void {
   void router.push({ name: 'file-detail', params: { id: fileId } })
 }
@@ -82,6 +90,22 @@ watch([directoryId, statusFilter], load)
         <option value="">All</option>
         <option v-for="s in FILE_STATUSES" :key="s" :value="s">{{ s }}</option>
       </select>
+    </div>
+
+    <div
+      v-if="!loading && !loadError && statusCounts.length > 0"
+      class="flex flex-wrap items-center gap-2"
+      data-test="status-counts"
+    >
+      <span
+        v-for="entry in statusCounts"
+        :key="entry.status"
+        class="flex items-center gap-1.5 text-sm"
+        :data-test="`status-count-${entry.status}`"
+      >
+        <StatusBadge :status="entry.status" />
+        <span class="tabular-nums text-muted-foreground">{{ entry.count }}</span>
+      </span>
     </div>
 
     <div v-if="loading" class="flex items-center gap-2 text-muted-foreground">

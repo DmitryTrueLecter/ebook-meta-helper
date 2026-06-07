@@ -6,6 +6,7 @@ import type { components } from '@/types/generated/openapi'
 import type {
   DirectoryDetail,
   DirectoryNode,
+  DirectoryStatus,
   EnrichmentTriggerResponse,
   FileDetail,
   FileListItem,
@@ -31,6 +32,9 @@ expectTypeOf<FileListItem['status']>().toEqualTypeOf<FileStatus>()
 expectTypeOf<FileListItem['extension']>().toEqualTypeOf<string | null>()
 
 expectTypeOf<DirectoryNode['children']>().toEqualTypeOf<DirectoryNode[]>()
+expectTypeOf<DirectoryNode['status']>().toEqualTypeOf<DirectoryStatus>()
+expectTypeOf<DirectoryNode['missing_count']>().toEqualTypeOf<number>()
+expectTypeOf<DirectoryStatus>().toEqualTypeOf<Schemas['DirectoryStatus']>()
 
 expectTypeOf<DirectoryDetail['files']>().toEqualTypeOf<FileListItem[]>()
 expectTypeOf<DirectoryDetail['id']>().toEqualTypeOf<Schemas['DirectoryDetail']['id']>()

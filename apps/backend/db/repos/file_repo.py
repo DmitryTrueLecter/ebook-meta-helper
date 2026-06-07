@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from db.models.directory import Directory
 from db.models.file_record import FileRecord, FileStatus
+from db.repos._query_utils import subtree_clause
 
 
 @dataclass(frozen=True)
@@ -30,20 +31,54 @@ class FileAttrs:
     hash: Optional[str] = None
 
 
-# State machine: see invariant tests for the full allowed-edge list.
+# Legacy reading→ai_queued→enriching edges retained until their callers are
+# removed; keeps the pipeline runnable during the phased refactor.
 _ALLOWED_TRANSITIONS: dict[FileStatus, frozenset[FileStatus]] = {
-    FileStatus.pending: frozenset({FileStatus.reading, FileStatus.failed}),
+    FileStatus.pending: frozenset(
+        {FileStatus.reading, FileStatus.failed, FileStatus.missing}
+    ),
     FileStatus.reading: frozenset(
-        {FileStatus.ai_queued, FileStatus.enriched, FileStatus.failed}
+        {
+            FileStatus.read,
+            FileStatus.ai_queued,
+            FileStatus.enriching,
+            FileStatus.enriched,
+            FileStatus.failed,
+        }
+    ),
+    FileStatus.read: frozenset(
+        {
+            FileStatus.reading,
+            FileStatus.analyze_queued,
+            FileStatus.failed,
+            FileStatus.missing,
+        }
     ),
     FileStatus.ai_queued: frozenset({FileStatus.enriching, FileStatus.failed}),
+    FileStatus.analyze_queued: frozenset(
+        {FileStatus.reading, FileStatus.enriching, FileStatus.failed}
+    ),
     FileStatus.enriching: frozenset({FileStatus.enriched, FileStatus.failed}),
     FileStatus.enriched: frozenset(
-        {FileStatus.accepted, FileStatus.rejected, FileStatus.failed}
+        {
+            FileStatus.accepted,
+            FileStatus.rejected,
+            FileStatus.analyze_queued,
+            FileStatus.failed,
+            FileStatus.missing,
+        }
     ),
-    FileStatus.accepted: frozenset({FileStatus.ai_queued}),
-    FileStatus.rejected: frozenset({FileStatus.ai_queued}),
-    FileStatus.failed: frozenset({FileStatus.pending, FileStatus.ai_queued}),
+    FileStatus.accepted: frozenset({FileStatus.ai_queued, FileStatus.analyze_queued}),
+    FileStatus.rejected: frozenset({FileStatus.ai_queued, FileStatus.analyze_queued}),
+    FileStatus.failed: frozenset(
+        {
+            FileStatus.pending,
+            FileStatus.ai_queued,
+            FileStatus.analyze_queued,
+            FileStatus.missing,
+        }
+    ),
+    FileStatus.missing: frozenset({FileStatus.reading, FileStatus.read}),
 }
 
 
@@ -115,6 +150,33 @@ def update_status(
     return record
 
 
+def claim_next_analyze_queued(session: Session) -> Optional[FileRecord]:
+    """Atomically claim the oldest `analyze_queued` file (→`reading`); the status-guarded UPDATE never picks `ai_queued`/`reading`/`enriching`, so no row is re-claimed mid-pipeline. None if none."""
+    oldest_id = session.execute(
+        select(FileRecord.id)
+        .where(FileRecord.status == FileStatus.analyze_queued)
+        .order_by(FileRecord.updated_at.asc(), FileRecord.id.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if oldest_id is None:
+        return None
+
+    claimed = session.execute(
+        update(FileRecord)
+        .where(
+            FileRecord.id == oldest_id,
+            FileRecord.status == FileStatus.analyze_queued,
+        )
+        .values(status=FileStatus.reading)
+    )
+    if claimed.rowcount != 1:
+        return None
+
+    record = session.get(FileRecord, oldest_id)
+    session.refresh(record)  # bulk UPDATE bypassed the identity map — reload the new status
+    return record
+
+
 def get_by_directory(
     session: Session,
     directory_id: int,
@@ -163,18 +225,20 @@ def list_paginated(
     return PaginatedRecords(items=list(rows), total=int(total))
 
 
+# Durable `analyze_queued` is deliberately absent — it is the queue marker the
+# drain re-claims after a restart, so a crash must not disturb it.
 _STALLED_STATUSES = (FileStatus.reading, FileStatus.ai_queued, FileStatus.enriching)
 
 
-def reset_stalled_to_pending(session: Session) -> int:
-    """Crash recovery: move in-flight FileRecord rows back to pending (bypasses state machine)."""
-    result = session.execute(
+def reset_stalled_to_analyze_queued(session: Session) -> int:
+    """Crash recovery: re-queue in-flight FileRecord rows for analyze (bypasses state machine)."""
+    update_result = session.execute(
         update(FileRecord)
         .where(FileRecord.status.in_(_STALLED_STATUSES))
-        .values(status=FileStatus.pending, error_message=None)
+        .values(status=FileStatus.analyze_queued, error_message=None)
     )
     session.flush()
-    return result.rowcount or 0
+    return update_result.rowcount or 0
 
 
 def list_directories_with_pending(session: Session) -> list[Directory]:
@@ -193,3 +257,36 @@ def count_by_status(session: Session, status: FileStatus) -> int:
     """Return the total number of FileRecord rows in a given status."""
     stmt = select(func.count()).select_from(FileRecord).where(FileRecord.status == status)
     return int(session.execute(stmt).scalar_one())
+
+
+# A file in any of these states left disk *unexpectedly*; `accepted`/`rejected`
+# moved on purpose and in-flight rows are mid-transition, so neither is missing.
+_RECONCILABLE_TO_MISSING = (
+    FileStatus.read,
+    FileStatus.enriched,
+    FileStatus.failed,
+)
+
+
+def mark_missing_under_root(
+    session: Session, root_path: str, present_paths: set[str]
+) -> int:
+    """Mark reconcilable files under `root_path` whose on-disk path is absent as `missing`."""
+    rows = session.execute(
+        select(FileRecord, Directory.path)
+        .join(Directory, FileRecord.directory_id == Directory.id)
+        .where(
+            subtree_clause(root_path),
+            FileRecord.status.in_(_RECONCILABLE_TO_MISSING),
+        )
+    ).all()
+
+    marked = 0
+    for record, directory_path in rows:
+        full_path = directory_path + "/" + record.filename
+        if full_path in present_paths:
+            continue
+        update_status(session, record.id, FileStatus.missing)
+        marked += 1
+    session.flush()
+    return marked

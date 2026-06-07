@@ -9,6 +9,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+from app.pipeline.analyze_drain import DrainResult, drain_one_analyze
 from app.pipeline.scan_cycle import CycleResult, run_scan_cycle
 from db.session import get_session
 from db.repos import file_repo, scan_job_repo
@@ -33,7 +34,7 @@ def run_watcher() -> None:
 
     reset_count = _reset_stalled_on_startup()
     if reset_count:
-        print(f"[watcher] recovery: reset {reset_count} stalled file records to pending")
+        print(f"[watcher] recovery: reset {reset_count} stalled file records to analyze_queued")
 
     while True:
         try:
@@ -44,44 +45,70 @@ def run_watcher() -> None:
 
 
 def _run_one_iteration(new_books_dir: str) -> None:
-    """Claim the next job and run one scan cycle against it; idle if nothing is claimable."""
-    claimed = _claim_next_job(new_books_dir)
-    if claimed is None:
+    """One unit of work, discover-priority: claim a pending discover job first so a slow analyze never starves discovery, else drain one analyze, else idle sweep."""
+    pending = _claim_pending_discover()
+    if pending is not None:
+        _report_cycle(run_scan_cycle(pending.job_id, pending.root_path))
         return
-    result = run_scan_cycle(claimed.job_id, claimed.root_path)
-    _report_cycle(result)
+
+    drained = drain_one_analyze()
+    if drained is not None:
+        _report_drain(drained)
+        return
+
+    swept = _claim_idle_sweep(new_books_dir)
+    if swept is not None:
+        _report_cycle(run_scan_cycle(swept.job_id, swept.root_path))
 
 
-def _claim_next_job(new_books_dir: str) -> Optional[_ClaimedJob]:
-    """Claim the oldest pending job; if none, enqueue + claim a NEW_BOOKS_DIR sweep job. None when nothing is claimable."""
-    # The idle sweep is folded into the job model — it runs through a ScanJob row like every
-    # UI-triggered scan, so the progress UI observes periodic sweeps the same way.
+def _claim_pending_discover() -> Optional[_ClaimedJob]:
+    """Claim the oldest already-enqueued discover job, or None if none is pending."""
     with get_session() as session:
         job = scan_job_repo.claim_next_pending(session)
         if job is None:
-            scan_job_repo.create(session, root_path=new_books_dir)
-            session.flush()
-            job = scan_job_repo.claim_next_pending(session)
+            return None
+        return _ClaimedJob(job_id=job.id, root_path=job.root_path)
+
+
+def _claim_idle_sweep(new_books_dir: str) -> Optional[_ClaimedJob]:
+    """Enqueue + claim a NEW_BOOKS_DIR sweep as a ScanJob row (same path as UI scans, so the progress UI observes sweeps); None when nothing is claimable."""
+    with get_session() as session:
+        scan_job_repo.create(session, root_path=new_books_dir)
+        session.flush()
+        job = scan_job_repo.claim_next_pending(session)
         if job is None:
             return None
         return _ClaimedJob(job_id=job.id, root_path=job.root_path)
 
 
 def _reset_stalled_on_startup() -> int:
-    """Run the in-flight → pending reset in a single short session."""
+    """Run the in-flight → analyze_queued reset in a single short session."""
     with get_session() as session:
-        return file_repo.reset_stalled_to_pending(session)
+        return file_repo.reset_stalled_to_analyze_queued(session)
 
 
 def _report_cycle(result: CycleResult) -> None:
-    if result.files_discovered == 0:
+    if (
+        result.files_discovered == 0
+        and result.files_marked_missing == 0
+        and result.directories_deleted == 0
+        and result.directories_archived == 0
+    ):
         return
     print(
-        f"[watcher] scan_job={result.scan_job_id} "
+        f"[watcher] discover scan_job={result.scan_job_id} "
         f"discovered={result.files_discovered} "
-        f"processed={result.files_processed} "
-        f"failed={result.files_failed}"
+        f"read={result.files_read} "
+        f"failed={result.files_failed} "
+        f"missing={result.files_marked_missing} "
+        f"dirs_deleted={result.directories_deleted} "
+        f"dirs_archived={result.directories_archived}"
     )
+
+
+def _report_drain(result: DrainResult) -> None:
+    outcome = "enriched" if result.success else "failed"
+    print(f"[watcher] analyze file={result.file_id} -> {outcome}")
 
 
 def _require_env(name: str) -> str:

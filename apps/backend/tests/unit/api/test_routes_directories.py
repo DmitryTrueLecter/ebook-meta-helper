@@ -11,15 +11,17 @@ from fastapi.testclient import TestClient
 from app.api.deps import get_db
 from app.api.main import app
 from app.api.routes import directories as routes
+from db.models.directory import DirectoryStatus
 from db.models.file_record import FileStatus
 from db.models.scan_job import ScanJobStatus as ScanJobState
 from db.repos.directory_repo import DirectoryStats
 
 
-def _make_directory(id_: int, name: str, path: str, depth: int, parent_id=None, children=None):
+def _make_directory(id_: int, name: str, path: str, depth: int, parent_id=None, children=None,
+                    status=DirectoryStatus.active):
     """Build a Directory-shaped stub good enough for from_attributes projection."""
     return SimpleNamespace(
-        id=id_, name=name, path=path, depth=depth,
+        id=id_, name=name, path=path, depth=depth, status=status,
         parent_id=parent_id, children=children or [],
     )
 
@@ -53,9 +55,9 @@ class TestListDirectoryTree:
         monkeypatch.setattr(
             routes.directory_repo, "get_status_counts",
             lambda _s: {
-                1: DirectoryStats(file_count=10, pending_count=3, enriched_count=5, accepted_count=2),
-                2: DirectoryStats(file_count=4, pending_count=1, enriched_count=2, accepted_count=1),
-                3: DirectoryStats(file_count=0, pending_count=0, enriched_count=0, accepted_count=0),
+                1: DirectoryStats(file_count=10, pending_count=3, enriched_count=5, accepted_count=2, missing_count=1),
+                2: DirectoryStats(file_count=4, pending_count=1, enriched_count=2, accepted_count=1, missing_count=0),
+                3: DirectoryStats(file_count=0, pending_count=0, enriched_count=0, accepted_count=0, missing_count=0),
             },
         )
 
@@ -65,6 +67,8 @@ class TestListDirectoryTree:
         assert [node["id"] for node in body] == [1, 3]
         assert body[0]["children"][0]["id"] == 2
         assert body[0]["pending_count"] == 3
+        assert body[0]["missing_count"] == 1
+        assert body[0]["status"] == "active"
         assert body[0]["children"][0]["accepted_count"] == 1
 
     def test_directory_without_files_yields_zero_counts(self, client, monkeypatch):
@@ -81,6 +85,8 @@ class TestListDirectoryTree:
         assert node["pending_count"] == 0
         assert node["enriched_count"] == 0
         assert node["accepted_count"] == 0
+        assert node["missing_count"] == 0
+        assert node["status"] == "active"
 
     def test_empty_tree_returns_empty_list(self, client, monkeypatch):
         test_client, _ = client
@@ -90,6 +96,23 @@ class TestListDirectoryTree:
         response = test_client.get("/api/directories")
         assert response.status_code == 200
         assert response.json() == []
+
+    def test_include_missing_true_uses_full_tree_query(self, client, monkeypatch):
+        test_client, _ = client
+        archived = _make_directory(1, "old", "/lib/old", 0, parent_id=None, children=[])
+
+        def _fail_active(_s):
+            raise AssertionError("active-only get_tree must not be called with include_missing=true")
+
+        monkeypatch.setattr(routes.directory_repo, "get_tree", _fail_active)
+        monkeypatch.setattr(
+            routes.directory_repo, "get_tree_including_missing", lambda _s: [archived]
+        )
+        monkeypatch.setattr(routes.directory_repo, "get_status_counts", lambda _s: {})
+
+        response = test_client.get("/api/directories?include_missing=true")
+        assert response.status_code == 200
+        assert [node["id"] for node in response.json()] == [1]
 
 
 class TestGetDirectoryDetail:
@@ -105,7 +128,7 @@ class TestGetDirectoryDetail:
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
         monkeypatch.setattr(
             routes.directory_repo, "get_stats_for_directory",
-            lambda _s, _id: DirectoryStats(2, 1, 1, 0),
+            lambda _s, _id: DirectoryStats(2, 1, 1, 0, 0),
         )
         monkeypatch.setattr(routes.file_repo, "get_by_directory", lambda _s, _d, _st: files)
         monkeypatch.setattr(
@@ -133,7 +156,7 @@ class TestGetDirectoryDetail:
             return []
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0))
+        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0, 0))
         monkeypatch.setattr(routes.file_repo, "get_by_directory", capture)
         monkeypatch.setattr(routes.metadata_repo, "find_files_with_ai_suggestion", lambda _s, ids: set())
 
@@ -151,7 +174,7 @@ class TestGetDirectoryDetail:
             return []
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0))
+        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0, 0))
         monkeypatch.setattr(routes.file_repo, "get_by_directory", capture)
         monkeypatch.setattr(routes.metadata_repo, "find_files_with_ai_suggestion", lambda _s, ids: set())
 
@@ -169,7 +192,7 @@ class TestGetDirectoryDetail:
             return []
 
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: directory)
-        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0))
+        monkeypatch.setattr(routes.directory_repo, "get_stats_for_directory", lambda _s, _id: DirectoryStats(0, 0, 0, 0, 0))
         monkeypatch.setattr(routes.file_repo, "get_by_directory", capture)
         monkeypatch.setattr(routes.metadata_repo, "find_files_with_ai_suggestion", lambda _s, ids: set())
 
@@ -196,8 +219,8 @@ class TestGetDirectoryDetail:
         assert "999" in response.json()["detail"]
 
 
-class TestTriggerDirectoryScan:
-    """POST /api/directories/{id}/scan creates a pending ScanJob and returns 202."""
+class TestTriggerDirectoryDiscover:
+    """POST /api/directories/{id}/discover creates a pending ScanJob and returns 202."""
 
     def test_creates_pending_job_and_returns_202(self, client, monkeypatch):
         test_client, fake_session = client
@@ -218,7 +241,7 @@ class TestTriggerDirectoryScan:
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: None)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
-        response = test_client.post("/api/directories/1/scan")
+        response = test_client.post("/api/directories/1/discover")
         assert response.status_code == 202
         body = response.json()
         assert body["id"] == 42
@@ -244,7 +267,7 @@ class TestTriggerDirectoryScan:
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: running)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
-        response = test_client.post("/api/directories/1/scan")
+        response = test_client.post("/api/directories/1/discover")
         assert response.status_code == 409
         assert "7" in response.json()["detail"]
         assert create_called["count"] == 0
@@ -265,7 +288,7 @@ class TestTriggerDirectoryScan:
         monkeypatch.setattr(routes.scan_job_repo, "find_active_or_pending", lambda _s: pending)
         monkeypatch.setattr(routes.scan_job_repo, "create", fake_create)
 
-        response = test_client.post("/api/directories/1/scan")
+        response = test_client.post("/api/directories/1/discover")
         assert response.status_code == 409
         assert "8" in response.json()["detail"]
         assert create_called["count"] == 0
@@ -274,5 +297,10 @@ class TestTriggerDirectoryScan:
         test_client, _ = client
         monkeypatch.setattr(routes.directory_repo, "get_by_id", lambda _s, _id: None)
 
-        response = test_client.post("/api/directories/999/scan")
+        response = test_client.post("/api/directories/999/discover")
+        assert response.status_code == 404
+
+    def test_retired_scan_route_returns_404(self, client):
+        test_client, _ = client
+        response = test_client.post("/api/directories/1/scan")
         assert response.status_code == 404
