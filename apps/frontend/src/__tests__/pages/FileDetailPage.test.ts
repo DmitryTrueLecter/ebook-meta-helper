@@ -529,16 +529,17 @@ describe('FileDetailPage — Analyze gated by status', () => {
     expect(enrichSpy).not.toHaveBeenCalled()
   })
 
-  it('shows the awaiting-read message for pending and reading', async () => {
-    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
-      fileDetail({ status: 'reading', ai_metadata: null }),
-    )
+  it.each<FileStatus>(['pending', 'reading'])(
+    'shows the awaiting-read message for "%s"',
+    async (status) => {
+      vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status, ai_metadata: null }))
 
-    const wrapper = await mountAt(testRouter, '/files/7')
-    await flushPromises()
+      const wrapper = await mountAt(testRouter, '/files/7')
+      await flushPromises()
 
-    expect(wrapper.text()).toContain('ожидает чтения метаданных')
-  })
+      expect(wrapper.text()).toContain('ожидает чтения метаданных')
+    },
+  )
 
   it('shows the missing-on-disk message for missing', async () => {
     vi.spyOn(api, 'getFileDetail').mockResolvedValue(
@@ -551,17 +552,18 @@ describe('FileDetailPage — Analyze gated by status', () => {
     expect(wrapper.text()).toContain('файл отсутствует на диске')
   })
 
-  it('shows the existing in-queue indicator for analyze_queued and enriching', async () => {
-    vi.spyOn(api, 'getFileDetail').mockResolvedValue(
-      fileDetail({ status: 'enriching', ai_metadata: null }),
-    )
+  it.each<FileStatus>(['analyze_queued', 'enriching'])(
+    'shows the existing in-queue indicator for "%s"',
+    async (status) => {
+      vi.spyOn(api, 'getFileDetail').mockResolvedValue(fileDetail({ status, ai_metadata: null }))
 
-    const wrapper = await mountAt(testRouter, '/files/7')
-    await flushPromises()
+      const wrapper = await mountAt(testRouter, '/files/7')
+      await flushPromises()
 
-    expect(wrapper.text()).toContain('AI analysis in queue')
-    expect(findAnalyzeButton(wrapper)).toBeUndefined()
-  })
+      expect(wrapper.text()).toContain('AI analysis in queue')
+      expect(findAnalyzeButton(wrapper)).toBeUndefined()
+    },
+  )
 })
 
 describe('FileDetailPage — defensive 409 on enrich', () => {
