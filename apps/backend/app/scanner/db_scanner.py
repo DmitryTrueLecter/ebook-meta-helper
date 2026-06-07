@@ -217,6 +217,12 @@ def _detect_mobi_version(header: bytes) -> str:
     return "MOBI"
 
 
+def _mtime_to_db_precision(mtime: float) -> datetime:
+    """Drop sub-second precision — the DATETIME column stores whole seconds, so an
+    unchanged file's on-disk microseconds must not read back as a content change."""
+    return datetime.fromtimestamp(mtime).replace(microsecond=0)
+
+
 def _file_change_snapshot(record: Optional[FileRecord]) -> Optional[tuple]:
     """Content-identity tuple used to decide whether a known file must be re-read."""
     if record is None:
@@ -318,7 +324,7 @@ def scan_file_to_db(
 
     stat = file_path.stat()
     size = stat.st_size
-    modified_at = datetime.fromtimestamp(stat.st_mtime)
+    modified_at = _mtime_to_db_precision(stat.st_mtime)
     
     existing = (
         session.query(FileRecord)
@@ -484,8 +490,14 @@ class DBScanner:
                     self.log(f"  NEW: {file_path.relative_to(root)}")
                 else:
                     self.stats["files_updated"] += 1
+                    # A `pending` row has never been read (crashed/interrupted earlier cycle),
+                    # so it always needs reading even when its bytes are unchanged on disk.
+                    stranded_pending = existing.status == FileStatus.pending
                     content_changed = reappeared or _file_change_snapshot(record) != before
-                    if content_changed and existing.status in _READABLE_STATUSES:
+                    needs_read = stranded_pending or (
+                        content_changed and existing.status in _READABLE_STATUSES
+                    )
+                    if needs_read:
                         self.outcome.file_ids_needing_read.append(record.id)
                     self.log(f"  UPD: {file_path.relative_to(root)}")
         except Exception as e:

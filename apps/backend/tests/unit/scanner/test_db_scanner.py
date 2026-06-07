@@ -353,6 +353,26 @@ class TestContentChangedReadGating:
 
         assert scanner.outcome.file_ids_needing_read == [record.id]
 
+    def test_stranded_pending_unchanged_file_is_requeued(
+        self, tmp_path, real_session
+    ):
+        """A `pending` row left from a crashed cycle must be re-queued for read even
+        when its bytes are unchanged on disk."""
+        root = tmp_path / "books"
+        root.mkdir()
+        target = root / "book.epub"
+        target.write_bytes(b"original content")
+
+        self._scan_once(real_session, root)
+        record = real_session.query(FileRecord).one()
+        record.status = FileStatus.pending
+        real_session.flush()
+
+        # No on-disk change: same size/mtime/format.
+        scanner = self._scan_once(real_session, root)
+
+        assert scanner.outcome.file_ids_needing_read == [record.id]
+
     def test_changed_enriched_file_not_requeued_but_size_updated(
         self, tmp_path, real_session
     ):
