@@ -1,22 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import DirectoryTreeNode from '@/components/DirectoryTreeNode.vue'
-import { listDirectories, listDirectoriesIncludingMissing } from '@/services/api'
+import { listDirectories } from '@/services/api'
 import type { DirectoryNode } from '@/types'
 
 const directories = ref<DirectoryNode[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
-const showMissing = ref(false)
 
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = null
   try {
-    directories.value = showMissing.value
-      ? await listDirectoriesIncludingMissing()
-      : await listDirectories()
+    directories.value = await listDirectories()
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -25,7 +22,6 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
-watch(showMissing, load)
 </script>
 
 <template>
@@ -37,11 +33,6 @@ watch(showMissing, load)
         refresh its files.
       </p>
     </header>
-
-    <label class="flex w-fit items-center gap-2 text-sm text-muted-foreground">
-      <input v-model="showMissing" type="checkbox" class="h-4 w-4" />
-      Show missing directories
-    </label>
 
     <div v-if="loading" class="flex items-center gap-2 text-muted-foreground">
       <Loader2 class="h-4 w-4 animate-spin" />
@@ -64,7 +55,6 @@ watch(showMissing, load)
         v-for="node in directories"
         :key="node.id"
         :node="node"
-        :show-missing="showMissing"
       />
     </ul>
   </section>
