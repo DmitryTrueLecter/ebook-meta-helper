@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, fields
 from datetime import date
 from decimal import Decimal
@@ -11,6 +12,24 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from db.models.metadata import Metadata, MetadataSource
+
+# ISBN-bearing scalars: real-world values arrive with separators (0-306-40615-2) that
+# overflow the fixed-width CHAR columns. Strip to digits + X check char before storing.
+_ISBN_FIELDS = frozenset({"isbn10", "isbn13"})
+
+
+def _fit_scalar(column_name: str, value: Any) -> Any:
+    """Normalize + truncate a scalar to its column so arbitrary ebook metadata can never
+    overflow and raise mid-discover (the prod incident: a dashed ISBN exceeding CHAR(10),
+    which crashed the whole scan cycle)."""
+    if not isinstance(value, str):
+        return value
+    if column_name in _ISBN_FIELDS:
+        value = re.sub(r"[^0-9Xx]", "", value).upper()
+    limit = getattr(Metadata.__table__.c[column_name].type, "length", None)
+    if limit is not None and len(value) > limit:
+        value = value[:limit]
+    return value
 
 
 @dataclass(frozen=True)
@@ -61,7 +80,10 @@ def create(session: Session, payload: MetadataInput) -> Metadata:
         enrichment_run_id=payload.enrichment_run_id,
         is_current=True,
         data=payload.data,
-        **{f.name: getattr(payload.scalars, f.name) for f in fields(payload.scalars)},
+        **{
+            f.name: _fit_scalar(f.name, getattr(payload.scalars, f.name))
+            for f in fields(payload.scalars)
+        },
     )
     session.add(record)
     session.flush()

@@ -28,13 +28,25 @@ class LogEntry:
     duration_ms: Optional[int] = None
 
 
+_MESSAGE_MAX_LEN = ProcessingLog.__table__.c.message.type.length
+
+
+def _fit_message(message: Optional[str]) -> Optional[str]:
+    """Truncate to the message column width. A too-long message (e.g. a wrapped DataError
+    carrying a full SQL statement) must never raise on insert — that turned a handled
+    per-file error into a discover-cycle-aborting crash in production."""
+    if message is None or _MESSAGE_MAX_LEN is None or len(message) <= _MESSAGE_MAX_LEN:
+        return message
+    return message[:_MESSAGE_MAX_LEN]
+
+
 def write(session: Session, entry: LogEntry) -> ProcessingLog:
     record = ProcessingLog(
         file_id=entry.file_id,
         enrichment_run_id=entry.enrichment_run_id,
         step=entry.step,
         level=entry.level,
-        message=entry.message,
+        message=_fit_message(entry.message),
         details=entry.details,
         duration_ms=entry.duration_ms,
     )

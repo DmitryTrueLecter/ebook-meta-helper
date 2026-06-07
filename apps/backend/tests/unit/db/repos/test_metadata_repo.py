@@ -184,3 +184,47 @@ class TestFindFilesWithAiSuggestion:
         f = _new_file(session)
         metadata_repo.create(session, _input(f.id, MetadataSource.file))
         assert metadata_repo.find_files_with_ai_suggestion(session, [f.id]) == set()
+
+
+class TestScalarFitting:
+    """Real ebook metadata is arbitrary text. Scalars must be normalized/truncated to fit
+    their columns so a single bad value (the prod incident: a dashed ISBN overflowing
+    CHAR(10)) cannot raise and abort the discover cycle."""
+
+    def test_isbn_separators_stripped_so_real_isbn_fits(self, session):
+        f = _new_file(session)
+        rec = metadata_repo.create(
+            session,
+            _input(
+                f.id,
+                MetadataSource.file,
+                scalars=MetadataScalars(isbn10="0-306-40615-2", isbn13="978-0-306-40615-7"),
+            ),
+        )
+        assert rec.isbn10 == "0306406152"
+        assert rec.isbn13 == "9780306406157"
+
+    def test_garbage_isbn_truncated_not_raised(self, session):
+        f = _new_file(session)
+        rec = metadata_repo.create(
+            session,
+            _input(f.id, MetadataSource.file, scalars=MetadataScalars(isbn10="01234567890123456789")),
+        )
+        assert len(rec.isbn10) <= 10
+
+    def test_overlong_string_scalars_truncated(self, session):
+        f = _new_file(session)
+        rec = metadata_repo.create(
+            session,
+            _input(
+                f.id,
+                MetadataSource.file,
+                scalars=MetadataScalars(
+                    title="T" * 800, series="S" * 400, language="en-US-very-long", asin="A" * 40
+                ),
+            ),
+        )
+        assert len(rec.title) <= 512
+        assert len(rec.series) <= 255
+        assert len(rec.language) <= 8
+        assert len(rec.asin) <= 16

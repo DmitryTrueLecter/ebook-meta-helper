@@ -96,3 +96,31 @@ class TestGetForFile:
 
         rows = log_repo.get_for_file(session, f1.id)
         assert [r.message for r in rows] == ["f1"]
+
+
+class TestMessageTruncation:
+    """The message column is String(1024). An over-long error message (e.g. a wrapped
+    DataError with a full SQL statement) must be truncated before insert — a too-long
+    message previously raised mid-cycle and aborted the entire discover pass."""
+
+    def test_overlong_message_truncated_to_column_limit(self, session):
+        f = _new_file(session)
+        log = log_repo.write(
+            session,
+            LogEntry(
+                file_id=f.id,
+                step=ProcessingStep.read_metadata,
+                level=ProcessingLogLevel.error,
+                message="x" * 5000,
+            ),
+        )
+        assert log.message is not None
+        assert len(log.message) <= 1024
+
+    def test_short_message_unchanged(self, session):
+        f = _new_file(session)
+        log = log_repo.write(
+            session,
+            LogEntry(file_id=f.id, step=ProcessingStep.read_metadata, message="ok"),
+        )
+        assert log.message == "ok"
