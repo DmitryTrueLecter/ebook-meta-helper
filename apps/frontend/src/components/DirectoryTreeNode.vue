@@ -9,10 +9,9 @@ import type { DirectoryNode } from '@/types'
 
 interface Props {
   node: DirectoryNode
-  showMissing?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), { showMissing: false })
+const props = defineProps<Props>()
 const router = useRouter()
 
 const expanded = ref(true)
@@ -22,9 +21,7 @@ const discoverError = ref<string | null>(null)
 const isMissing = computed(() => props.node.status === 'missing')
 
 const visibleChildren = computed<DirectoryNode[]>(() =>
-  props.showMissing
-    ? props.node.children
-    : props.node.children.filter((child) => child.status !== 'missing'),
+  props.node.children.filter((child) => child.status !== 'missing'),
 )
 
 function toggle(): void {
@@ -122,7 +119,6 @@ async function startDiscover(): Promise<void> {
         v-for="child in visibleChildren"
         :key="child.id"
         :node="child"
-        :show-missing="showMissing"
       />
     </ul>
   </li>

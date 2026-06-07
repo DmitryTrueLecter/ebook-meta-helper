@@ -156,7 +156,7 @@ describe('DirectoryTreeNode', () => {
 
   it('renders a missing badge and missing_count when the directory is archived', () => {
     const wrapper = mount(DirectoryTreeNode, {
-      props: { node: makeNode({ status: 'missing', missing_count: 4 }), showMissing: true },
+      props: { node: makeNode({ status: 'missing', missing_count: 4 }) },
       global: { plugins: [testRouter] },
     })
 
@@ -164,24 +164,17 @@ describe('DirectoryTreeNode', () => {
     expect(wrapper.find('[data-test="directory-missing-count"]').text()).toContain('4 missing')
   })
 
-  it('hides missing children by default and shows them when showMissing is set', async () => {
+  it('always hides missing child directories', async () => {
     const liveChild = makeNode({ id: 2, name: 'live-sub', status: 'active' })
     const goneChild = makeNode({ id: 3, name: 'gone-sub', status: 'missing' })
     const root = makeNode({ id: 1, name: 'root', children: [liveChild, goneChild] })
 
-    const hidden = mount(DirectoryTreeNode, {
-      props: { node: root, showMissing: false },
+    const wrapper = mount(DirectoryTreeNode, {
+      props: { node: root },
       global: { plugins: [testRouter] },
     })
-    expect(hidden.text()).toContain('live-sub')
-    expect(hidden.text()).not.toContain('gone-sub')
-
-    const shown = mount(DirectoryTreeNode, {
-      props: { node: root, showMissing: true },
-      global: { plugins: [testRouter] },
-    })
-    expect(shown.text()).toContain('live-sub')
-    expect(shown.text()).toContain('gone-sub')
+    expect(wrapper.text()).toContain('live-sub')
+    expect(wrapper.text()).not.toContain('gone-sub')
   })
 
   it('renders children when expanded and hides them when collapsed', async () => {
