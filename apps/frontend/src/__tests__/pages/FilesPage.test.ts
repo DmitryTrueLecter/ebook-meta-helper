@@ -138,12 +138,64 @@ describe('FilesPage', () => {
     expect(options).toContain('')
     expect(options).toContain('pending')
     expect(options).toContain('reading')
+    expect(options).toContain('read')
     expect(options).toContain('ai_queued')
+    expect(options).toContain('analyze_queued')
     expect(options).toContain('enriching')
     expect(options).toContain('enriched')
     expect(options).toContain('accepted')
     expect(options).toContain('rejected')
     expect(options).toContain('failed')
+    expect(options).toContain('missing')
+  })
+
+  it('defaults to the "All" filter (no implicit pending-only view) so files of every status load', async () => {
+    const spy = vi.spyOn(api, 'getDirectoryDetail').mockResolvedValue(makeDirectoryDetail([]))
+
+    await mountAtFilesRoute(42)
+    await flushPromises()
+
+    // undefined filter == no ?status query == server returns every status.
+    expect(spy).toHaveBeenCalledWith(42, undefined)
+  })
+
+  it('renders read and missing files via status chips (a moved file does not vanish)', async () => {
+    vi.spyOn(api, 'getDirectoryDetail').mockResolvedValue(
+      makeDirectoryDetail([
+        makeFile({ id: 1, filename: 'fresh.epub', status: 'read' }),
+        makeFile({ id: 2, filename: 'gone.epub', status: 'missing' }),
+      ]),
+    )
+
+    const { wrapper } = await mountAtFilesRoute()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('fresh.epub')
+    expect(wrapper.text()).toContain('gone.epub')
+    const rowText = wrapper.findAll('tbody tr').map((r) => r.text()).join(' ')
+    expect(rowText).toContain('read')
+    expect(rowText).toContain('missing')
+  })
+
+  it('shows per-status counts for the loaded files', async () => {
+    vi.spyOn(api, 'getDirectoryDetail').mockResolvedValue(
+      makeDirectoryDetail([
+        makeFile({ id: 1, filename: 'a.epub', status: 'read' }),
+        makeFile({ id: 2, filename: 'b.epub', status: 'read' }),
+        makeFile({ id: 3, filename: 'c.epub', status: 'missing' }),
+        makeFile({ id: 4, filename: 'd.epub', status: 'accepted' }),
+      ]),
+    )
+
+    const { wrapper } = await mountAtFilesRoute()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="status-counts"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="status-count-read"]').text()).toContain('2')
+    expect(wrapper.find('[data-test="status-count-missing"]').text()).toContain('1')
+    expect(wrapper.find('[data-test="status-count-accepted"]').text()).toContain('1')
+    // statuses with zero files are not listed
+    expect(wrapper.find('[data-test="status-count-pending"]').exists()).toBe(false)
   })
 
   it('re-fetches with the selected status filter when the dropdown changes', async () => {

@@ -8,15 +8,20 @@ type Schemas = components['schemas']
 export const FILE_STATUSES = [
   'pending',
   'reading',
+  'read',
   'ai_queued',
+  'analyze_queued',
   'enriching',
   'enriched',
   'accepted',
   'rejected',
   'failed',
+  'missing',
 ] as const
 
 export type FileStatus = Schemas['FileStatus']
+
+export type DirectoryStatus = Schemas['DirectoryStatus']
 
 // Runtime list mirroring the backend ScanJobStatus enum, in emit order.
 export const SCAN_JOB_STATES = [

@@ -601,3 +601,40 @@ class TestEnrichmentRunLifecycle:
                 run.id,
                 EnrichmentRunResult(success_count=0, failure_count=0),
             )
+
+
+class TestCrashRecoveryAgainstRealDb:
+    """Real MariaDB exercises the new ENUM values the SQLite unit suite cannot store."""
+
+    def test_in_flight_reset_to_analyze_queued_leaves_durable_and_terminal(self, session):
+        directory = _make_directory(session)
+        in_flight = {
+            "reading.fb2": FileStatus.reading,
+            "ai.fb2": FileStatus.ai_queued,
+            "enriching.fb2": FileStatus.enriching,
+        }
+        untouched = {
+            "durable.fb2": FileStatus.analyze_queued,
+            "read.fb2": FileStatus.read,
+            "enriched.fb2": FileStatus.enriched,
+            "accepted.fb2": FileStatus.accepted,
+            "missing.fb2": FileStatus.missing,
+        }
+        for filename, status in {**in_flight, **untouched}.items():
+            session.add(
+                FileRecord(directory_id=directory.id, filename=filename, status=status)
+            )
+        session.flush()
+
+        reset_count = file_repo.reset_stalled_to_analyze_queued(session)
+        session.commit()
+
+        assert reset_count == len(in_flight)
+        rows = {
+            row.filename: row.status
+            for row in session.execute(select(FileRecord)).scalars()
+        }
+        for filename in in_flight:
+            assert rows[filename] == FileStatus.analyze_queued
+        for filename, status in untouched.items():
+            assert rows[filename] == status

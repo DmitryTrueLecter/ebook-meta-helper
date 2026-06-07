@@ -130,12 +130,12 @@ def reject_file_endpoint(file_id: int, db: Session = Depends(get_db)) -> FileLis
 def enrich_file_endpoint(
     file_id: int, db: Session = Depends(get_db)
 ) -> EnrichmentTriggerResponse:
-    """Queue the file for AI re-enrichment — watcher picks up `ai_queued` rows on the next cycle."""
+    """Queue the file for AI analyze — watcher analyze-drain picks up `analyze_queued` rows."""
     record = _require_file(db, file_id)
     directory_id = record.directory_id
     # Idempotent on already-queued: user_file runs are never finished in this flow,
     # so a naive re-queue would accumulate permanent orphan running rows.
-    if record.status == FileStatus.ai_queued:
+    if record.status == FileStatus.analyze_queued:
         existing = enrichment_run_repo.find_latest_running(
             db, directory_id, EnrichmentTrigger.user_file
         )
@@ -146,7 +146,7 @@ def enrich_file_endpoint(
                 status=record.status.value,
             )
     try:
-        updated = file_repo.update_status(db, file_id, FileStatus.ai_queued)
+        updated = file_repo.update_status(db, file_id, FileStatus.analyze_queued)
     except InvalidStatusTransition as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)

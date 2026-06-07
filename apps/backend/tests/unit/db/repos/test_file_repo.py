@@ -21,17 +21,37 @@ class TestTransitionPredicate:
     @pytest.mark.parametrize(
         ("src", "dst"),
         [
+            # discover: find → read metadata (no AI)
             (FileStatus.pending, FileStatus.reading),
-            (FileStatus.reading, FileStatus.ai_queued),
-            (FileStatus.reading, FileStatus.enriched),
-            (FileStatus.ai_queued, FileStatus.enriching),
+            (FileStatus.reading, FileStatus.read),
+            # explicit per-file Analyze queues onto the durable marker
+            (FileStatus.read, FileStatus.analyze_queued),
+            (FileStatus.enriched, FileStatus.analyze_queued),
+            (FileStatus.accepted, FileStatus.analyze_queued),
+            (FileStatus.rejected, FileStatus.analyze_queued),
+            (FileStatus.failed, FileStatus.analyze_queued),
+            # drain claims the durable marker
+            (FileStatus.analyze_queued, FileStatus.reading),
+            (FileStatus.analyze_queued, FileStatus.enriching),
+            (FileStatus.analyze_queued, FileStatus.failed),
+            # analyze drain: claimed row at `reading` enters the AI enrich step
+            (FileStatus.reading, FileStatus.enriching),
+            # AI enrich tail
             (FileStatus.enriching, FileStatus.enriched),
             (FileStatus.enriched, FileStatus.accepted),
             (FileStatus.enriched, FileStatus.rejected),
-            (FileStatus.accepted, FileStatus.ai_queued),
-            (FileStatus.rejected, FileStatus.ai_queued),
-            (FileStatus.failed, FileStatus.pending),
-            (FileStatus.failed, FileStatus.ai_queued),
+            # discover marks files gone, and recovers them on reappearance
+            (FileStatus.pending, FileStatus.missing),
+            (FileStatus.read, FileStatus.missing),
+            (FileStatus.enriched, FileStatus.missing),
+            (FileStatus.failed, FileStatus.missing),
+            (FileStatus.missing, FileStatus.read),
+            # discover re-reads a changed `read` file, and reads a reappeared `missing` one
+            (FileStatus.read, FileStatus.reading),
+            (FileStatus.missing, FileStatus.reading),
+            # legacy transient path retained until DMI-124/125 strip the callers
+            (FileStatus.reading, FileStatus.ai_queued),
+            (FileStatus.ai_queued, FileStatus.enriching),
         ],
     )
     def test_allowed_moves(self, src, dst):
@@ -42,12 +62,21 @@ class TestTransitionPredicate:
         [
             (FileStatus.pending, FileStatus.enriched),
             (FileStatus.pending, FileStatus.accepted),
-            (FileStatus.reading, FileStatus.accepted),
-            (FileStatus.ai_queued, FileStatus.accepted),
+            (FileStatus.read, FileStatus.accepted),
+            (FileStatus.analyze_queued, FileStatus.accepted),
             (FileStatus.enriching, FileStatus.accepted),
             (FileStatus.accepted, FileStatus.rejected),
             (FileStatus.rejected, FileStatus.accepted),
             (FileStatus.accepted, FileStatus.pending),
+            # accepted/rejected files moved to BOOKS_READY — discover must not mark them missing
+            (FileStatus.accepted, FileStatus.missing),
+            (FileStatus.rejected, FileStatus.missing),
+            # in-flight rows are not part of the missing predicate
+            (FileStatus.reading, FileStatus.missing),
+            (FileStatus.enriching, FileStatus.missing),
+            # missing recovery lands on read, never straight into a terminal/queued state
+            (FileStatus.missing, FileStatus.accepted),
+            (FileStatus.missing, FileStatus.analyze_queued),
         ],
     )
     def test_forbidden_moves(self, src, dst):
@@ -57,7 +86,9 @@ class TestTransitionPredicate:
         for src in (
             FileStatus.pending,
             FileStatus.reading,
+            FileStatus.read,
             FileStatus.ai_queued,
+            FileStatus.analyze_queued,
             FileStatus.enriching,
             FileStatus.enriched,
         ):
@@ -277,9 +308,9 @@ class TestListPaginated:
         assert page.items == []
 
 
-class TestResetStalledToPending:
-    """Crash-recovery reset bypasses the state machine on purpose — these
-    transitions are not in the normal allowed-edge list."""
+class TestResetStalledToAnalyzeQueued:
+    """Crash-recovery reset bypasses the state machine on purpose — it re-queues
+    in-flight rows onto the durable marker, leaving durable/terminal rows untouched."""
 
     def test_resets_reading_ai_queued_enriching(self, session):
         d = _new_directory(session)
@@ -289,32 +320,49 @@ class TestResetStalledToPending:
         session.add_all([rec_reading, rec_ai, rec_enr])
         session.flush()
 
-        count = file_repo.reset_stalled_to_pending(session)
+        count = file_repo.reset_stalled_to_analyze_queued(session)
         assert count == 3
 
         for rec in (rec_reading, rec_ai, rec_enr):
             session.refresh(rec)
-            assert rec.status == FileStatus.pending
+            assert rec.status == FileStatus.analyze_queued
 
-    def test_leaves_terminal_and_pending_alone(self, session):
+    def test_durable_analyze_queued_untouched(self, session):
+        d = _new_directory(session)
+        rec = FileRecord(directory_id=d.id, filename="durable.fb2", status=FileStatus.analyze_queued)
+        session.add(rec)
+        session.flush()
+
+        count = file_repo.reset_stalled_to_analyze_queued(session)
+        assert count == 0
+        session.refresh(rec)
+        assert rec.status == FileStatus.analyze_queued
+
+    def test_leaves_terminal_resting_alone(self, session):
         d = _new_directory(session)
         rec_pending = FileRecord(directory_id=d.id, filename="p.fb2", status=FileStatus.pending)
+        rec_read = FileRecord(directory_id=d.id, filename="rd.fb2", status=FileStatus.read)
         rec_enriched = FileRecord(directory_id=d.id, filename="x.fb2", status=FileStatus.enriched)
         rec_failed = FileRecord(directory_id=d.id, filename="f.fb2", status=FileStatus.failed)
         rec_accepted = FileRecord(directory_id=d.id, filename="a.fb2", status=FileStatus.accepted)
         rec_rejected = FileRecord(directory_id=d.id, filename="j.fb2", status=FileStatus.rejected)
-        session.add_all([rec_pending, rec_enriched, rec_failed, rec_accepted, rec_rejected])
+        rec_missing = FileRecord(directory_id=d.id, filename="m.fb2", status=FileStatus.missing)
+        session.add_all(
+            [rec_pending, rec_read, rec_enriched, rec_failed, rec_accepted, rec_rejected, rec_missing]
+        )
         session.flush()
 
-        count = file_repo.reset_stalled_to_pending(session)
+        count = file_repo.reset_stalled_to_analyze_queued(session)
         assert count == 0
 
         for rec, expected in (
             (rec_pending, FileStatus.pending),
+            (rec_read, FileStatus.read),
             (rec_enriched, FileStatus.enriched),
             (rec_failed, FileStatus.failed),
             (rec_accepted, FileStatus.accepted),
             (rec_rejected, FileStatus.rejected),
+            (rec_missing, FileStatus.missing),
         ):
             session.refresh(rec)
             assert rec.status == expected
@@ -330,7 +378,7 @@ class TestResetStalledToPending:
         session.add(rec)
         session.flush()
 
-        file_repo.reset_stalled_to_pending(session)
+        file_repo.reset_stalled_to_analyze_queued(session)
         session.refresh(rec)
         assert rec.error_message is None
 
@@ -385,3 +433,139 @@ class TestCountByStatus:
         assert file_repo.count_by_status(session, FileStatus.pending) == 2
         assert file_repo.count_by_status(session, FileStatus.enriched) == 1
         assert file_repo.count_by_status(session, FileStatus.failed) == 0
+
+
+class TestMarkMissingUnderRoot:
+    def _file(self, session, directory, filename, status):
+        record = FileRecord(directory_id=directory.id, filename=filename, status=status)
+        session.add(record)
+        session.flush()
+        return record
+
+    def test_absent_reconcilable_file_marked_missing(self, session):
+        d = _new_directory(session, "/books/sci")
+        present = self._file(session, d, "here.fb2", FileStatus.read)
+        gone = self._file(session, d, "gone.fb2", FileStatus.read)
+
+        marked = file_repo.mark_missing_under_root(
+            session, "/books/sci", {"/books/sci/here.fb2"}
+        )
+        session.flush()
+
+        assert marked == 1
+        assert session.get(FileRecord, gone.id).status == FileStatus.missing
+        assert session.get(FileRecord, present.id).status == FileStatus.read
+
+    def test_accepted_and_in_flight_never_marked(self, session):
+        d = _new_directory(session, "/books/sci")
+        accepted = self._file(session, d, "accepted.fb2", FileStatus.accepted)
+        rejected = self._file(session, d, "rejected.fb2", FileStatus.rejected)
+        reading = self._file(session, d, "reading.fb2", FileStatus.reading)
+
+        marked = file_repo.mark_missing_under_root(session, "/books/sci", set())
+        session.flush()
+
+        assert marked == 0
+        assert session.get(FileRecord, accepted.id).status == FileStatus.accepted
+        assert session.get(FileRecord, rejected.id).status == FileStatus.rejected
+        assert session.get(FileRecord, reading.id).status == FileStatus.reading
+
+    def test_sibling_prefix_directory_not_cross_matched(self, session):
+        sci = _new_directory(session, "/books/sci")
+        science = _new_directory(session, "/books/science")
+        in_scope = self._file(session, sci, "a.fb2", FileStatus.read)
+        sibling = self._file(session, science, "b.fb2", FileStatus.read)
+
+        # Reconcile only the /books/sci subtree with an empty present-set.
+        marked = file_repo.mark_missing_under_root(session, "/books/sci", set())
+        session.flush()
+
+        assert marked == 1
+        assert session.get(FileRecord, in_scope.id).status == FileStatus.missing
+        # /books/science is a sibling prefix — it must NOT be touched.
+        assert session.get(FileRecord, sibling.id).status == FileStatus.read
+
+    def test_underscore_in_root_not_treated_as_wildcard(self, session):
+        """A literal `_` in the root path must not match arbitrary chars via LIKE."""
+        scoped_child = _new_directory(session, "/books/sci_fi/sub")
+        decoy_child = _new_directory(session, "/books/sciXfi/sub")
+        in_scope = self._file(session, scoped_child, "a.fb2", FileStatus.read)
+        out_of_scope = self._file(session, decoy_child, "b.fb2", FileStatus.read)
+
+        # Unescaped, `/books/sci_fi/%` would also match `/books/sciXfi/sub` (`_` = any char).
+        marked = file_repo.mark_missing_under_root(session, "/books/sci_fi", set())
+        session.flush()
+
+        assert marked == 1
+        assert session.get(FileRecord, in_scope.id).status == FileStatus.missing
+        assert session.get(FileRecord, out_of_scope.id).status == FileStatus.read
+
+    def test_enriched_and_failed_are_reconcilable(self, session):
+        d = _new_directory(session, "/books/sci")
+        enriched = self._file(session, d, "enriched.fb2", FileStatus.enriched)
+        failed = self._file(session, d, "failed.fb2", FileStatus.failed)
+
+        marked = file_repo.mark_missing_under_root(session, "/books/sci", set())
+        session.flush()
+
+        assert marked == 2
+        assert session.get(FileRecord, enriched.id).status == FileStatus.missing
+        assert session.get(FileRecord, failed.id).status == FileStatus.missing
+
+
+class TestClaimNextAnalyzeQueued:
+    def _file(self, session, directory, name, status):
+        record = FileRecord(directory_id=directory.id, filename=name, status=status)
+        session.add(record)
+        session.flush()
+        return record
+
+    def test_claims_analyze_queued_and_moves_to_reading(self, session):
+        d = _new_directory(session)
+        queued = self._file(session, d, "a.fb2", FileStatus.analyze_queued)
+
+        claimed = file_repo.claim_next_analyze_queued(session)
+
+        assert claimed is not None
+        assert claimed.id == queued.id
+        assert claimed.status == FileStatus.reading
+
+    def test_returns_none_when_no_analyze_queued(self, session):
+        d = _new_directory(session)
+        self._file(session, d, "a.fb2", FileStatus.read)
+        self._file(session, d, "b.fb2", FileStatus.enriched)
+
+        assert file_repo.claim_next_analyze_queued(session) is None
+
+    def test_never_claims_ai_queued_reading_or_enriching(self, session):
+        """The drain selects ONLY analyze_queued — no re-pickup of mid-pipeline rows."""
+        d = _new_directory(session)
+        self._file(session, d, "a.fb2", FileStatus.ai_queued)
+        self._file(session, d, "b.fb2", FileStatus.reading)
+        self._file(session, d, "c.fb2", FileStatus.enriching)
+
+        assert file_repo.claim_next_analyze_queued(session) is None
+
+    def test_claims_in_fifo_order_by_id(self, session):
+        d = _new_directory(session)
+        first = self._file(session, d, "a.fb2", FileStatus.analyze_queued)
+        second = self._file(session, d, "b.fb2", FileStatus.analyze_queued)
+
+        claimed = file_repo.claim_next_analyze_queued(session)
+        assert claimed.id == first.id
+        # Second remains queued until the next claim.
+        assert session.get(FileRecord, second.id).status == FileStatus.analyze_queued
+
+    def test_serial_drain_of_multiple_queued(self, session):
+        d = _new_directory(session)
+        a = self._file(session, d, "a.fb2", FileStatus.analyze_queued)
+        b = self._file(session, d, "b.fb2", FileStatus.analyze_queued)
+
+        first = file_repo.claim_next_analyze_queued(session)
+        # Simulate the first finishing so the second is the only analyze_queued left.
+        file_repo.update_status(session, first.id, FileStatus.enriching)
+        session.flush()
+
+        second = file_repo.claim_next_analyze_queued(session)
+        assert {first.id, second.id} == {a.id, b.id}
+        assert second.status == FileStatus.reading
