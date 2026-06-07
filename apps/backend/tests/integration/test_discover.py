@@ -178,6 +178,54 @@ class TestDiscoverReadsMetadataNoAI:
         assert reloaded.size == target.stat().st_size
 
 
+class TestStrandedPendingRecovery:
+    def test_stranded_pending_unchanged_file_is_read(
+        self, tmp_path, session, session_factory
+    ):
+        """A `pending` row whose on-disk bytes never changed (crashed earlier cycle)
+        must be read on the next discover, not left stuck in `pending` forever."""
+        library = tmp_path / "library"
+        _copy(FB2_FIXTURE, library / "sci-fi", "book.fb2")
+
+        # First discover reads it; force it back to `pending` to simulate a row
+        # stranded by an earlier crashed cycle (read never completed).
+        _discover(library, session_factory)
+        record = session.execute(select(FileRecord)).scalar_one()
+        record.status = FileStatus.pending
+        session.commit()
+        record_id = record.id
+
+        # Same bytes on disk — content snapshot is unchanged.
+        result = _discover(library, session_factory)
+        assert result.files_discovered == 1
+        assert result.files_read == 1
+        assert result.files_failed == 0
+
+        session.commit()
+        reloaded = session.execute(select(FileRecord)).scalar_one()
+        assert reloaded.id == record_id
+        assert reloaded.status == FileStatus.read
+
+    def test_already_read_unchanged_file_is_not_re_read(
+        self, tmp_path, session, session_factory
+    ):
+        """An already-`read` file with unchanged bytes is not re-queued — no needless re-work."""
+        library = tmp_path / "library"
+        _copy(FB2_FIXTURE, library / "sci-fi", "book.fb2")
+
+        first = _discover(library, session_factory)
+        assert first.files_read == 1
+
+        # Re-discover with no on-disk change.
+        second = _discover(library, session_factory)
+        assert second.files_discovered == 0
+        assert second.files_read == 0
+        assert second.files_failed == 0
+
+        session.commit()
+        assert session.execute(select(FileRecord)).scalar_one().status == FileStatus.read
+
+
 class TestFileReconcile:
     def test_gone_read_file_marked_missing_history_preserved(
         self, tmp_path, session, session_factory
