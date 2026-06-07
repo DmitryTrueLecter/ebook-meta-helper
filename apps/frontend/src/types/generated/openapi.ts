@@ -135,7 +135,7 @@ export interface paths {
         put?: never;
         /**
          * Enrich File Endpoint
-         * @description Queue the file for AI re-enrichment — watcher picks up `ai_queued` rows on the next cycle.
+         * @description Queue the file for AI analyze — watcher analyze-drain picks up `analyze_queued` rows.
          */
         post: operations["enrich_file_endpoint_api_files__file_id__enrich_post"];
         delete?: never;
