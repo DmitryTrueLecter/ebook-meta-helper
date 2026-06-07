@@ -11,7 +11,6 @@ import {
   getFileLogs,
   getScanStatus,
   listDirectories,
-  listDirectoriesIncludingMissing,
   rejectFile,
 } from '@/services/api'
 
@@ -164,39 +163,6 @@ describe('listDirectories', () => {
     fetchMock.mockRejectedValueOnce(new Error('network down'))
 
     await expect(listDirectories()).rejects.toThrow(/network down/)
-  })
-})
-
-describe('listDirectoriesIncludingMissing', () => {
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn())
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('GETs /api/directories?include_missing=true and returns the array', async () => {
-    const tree = [{ id: 1, name: 'root', children: [] }]
-    const fetchMock = vi.mocked(globalThis.fetch)
-    fetchMock.mockResolvedValueOnce(
-      mockResponse({ status: 200, json: () => Promise.resolve(tree) }),
-    )
-
-    const result = await listDirectoriesIncludingMissing()
-
-    expect(result).toEqual(tree)
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/directories?include_missing=true',
-      expect.objectContaining({ headers: expect.any(Object) }),
-    )
-  })
-
-  it('throws on 204 No Content (does not silently return [])', async () => {
-    const fetchMock = vi.mocked(globalThis.fetch)
-    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
-
-    await expect(listDirectoriesIncludingMissing()).rejects.toThrow(/empty response/)
   })
 })
 

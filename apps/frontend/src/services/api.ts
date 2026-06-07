@@ -67,11 +67,6 @@ export async function listDirectories(): Promise<DirectoryNode[]> {
   return fetchDirectoryTree('')
 }
 
-// GET /api/directories?include_missing=true — full tree including archived (missing) dirs.
-export async function listDirectoriesIncludingMissing(): Promise<DirectoryNode[]> {
-  return fetchDirectoryTree('?include_missing=true')
-}
-
 // GET /api/directories/{id} — directory + its files. Optional status filter.
 export async function getDirectoryDetail(
   id: number,
