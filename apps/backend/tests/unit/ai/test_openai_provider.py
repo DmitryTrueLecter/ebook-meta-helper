@@ -1,8 +1,21 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.ai.base import AIConfigSnapshot
 from app.ai.providers import OpenAIProvider
 from app.models.book import BookRecord
+
+
+def _config() -> AIConfigSnapshot:
+    return AIConfigSnapshot(
+        system_prompt="sys",
+        cheap_model="cheap-model",
+        expensive_model="expensive-model",
+        escalation_threshold=0.7,
+        response_format_ref="book_edition_info",
+        provider="openai",
+        effort="high",
+    )
 
 
 def _record() -> BookRecord:
@@ -91,7 +104,8 @@ def test_openai_provider_v2_applies_edition_and_original(monkeypatch):
         directories=["warhammer"],
     )
 
-    result = provider.enrich(record)
+    outcome = provider.enrich(record, _config())
+    result = outcome.record
 
     # Edition
     assert result.title == "Восхождение Хоруса"
@@ -110,3 +124,5 @@ def test_openai_provider_v2_applies_edition_and_original(monkeypatch):
     # Provenance
     assert result.source == "ai"
     assert result.confidence == 0.93
+    assert len(outcome.calls) == 1
+    assert outcome.canonical_sequence == 0

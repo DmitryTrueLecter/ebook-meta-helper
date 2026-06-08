@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from openai import OpenAI
 
-from app.ai.base import AIProvider
+from app.ai.base import AICallRecord, AIConfigSnapshot, AIProvider, EnrichOutcome
 from app.ai.parse.book_metadata import parse_book_metadata
 from app.ai.prompt.book_metadata import (
     build_book_metadata_prompt,
@@ -32,23 +32,41 @@ class OpenAIProvider(AIProvider):
     def enrich(
         self,
         record: BookRecord,
+        config: AIConfigSnapshot,
         directory_hint: Optional[dict] = None,
-    ) -> BookRecord:
+    ) -> EnrichOutcome:
         result = deepcopy(record)
+        call_errors: list[str] = []
 
         try:
             raw = self._call_openai(record, directory_hint)
             parsed, errors = parse_book_metadata(raw)
 
+            call_errors = errors
             result.errors.extend(errors)
 
             if parsed:
                 self._apply(parsed, result)
 
         except Exception as e:
-            result.errors.append(f"openai: {e}")
+            message = f"openai: {e}"
+            call_errors = [message]
+            result.errors.append(message)
 
-        return result
+        call = AICallRecord(
+            system_prompt=config.system_prompt,
+            user_prompt="",
+            raw_response="",
+            model=config.cheap_model,
+            response_format_ref=config.response_format_ref,
+            duration_ms=0,
+            tier="cheap",
+            sequence=0,
+            effort=config.effort,
+            confidence=result.confidence,
+            parse_errors=call_errors,
+        )
+        return EnrichOutcome(record=result, calls=[call], canonical_sequence=0)
 
     def summarize_directory(self, files: list[BookRecord]) -> dict:
         if not files:

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from fastapi.testclient import TestClient
 
+from app.ai.base import EnrichOutcome
 from app.api.deps import get_db
 from app.api.main import app
 from app.models.book import BookRecord
@@ -59,7 +60,7 @@ def stub_provider(monkeypatch):
     """Stub the OpenAI call: record invocations and return a deterministic AI BookRecord."""
     calls: list[BookRecord] = []
 
-    def fake_enrich(record, provider_name, directory_hint=None):
+    def fake_enrich(record, provider_name, config, directory_hint=None):
         calls.append(record)
         ai = BookRecord(
             path=record.path,
@@ -72,7 +73,7 @@ def stub_provider(monkeypatch):
             source="ai",
             confidence=0.95,
         )
-        return ai
+        return EnrichOutcome(record=ai, calls=[], canonical_sequence=0)
 
     monkeypatch.setenv("AI_PROVIDER", "dummy")
     monkeypatch.setattr("app.pipeline.process_file.enrich", fake_enrich)

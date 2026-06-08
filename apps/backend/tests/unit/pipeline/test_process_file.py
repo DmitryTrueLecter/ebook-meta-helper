@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 from unittest.mock import patch
 
+from app.ai.base import AIConfigSnapshot, EnrichOutcome
 from app.models.book import BookRecord
 from app.pipeline.process_file import analyze_file
 from db.models.directory import Directory
@@ -49,14 +50,23 @@ def _seed_directory_file_run(session) -> tuple[int, int]:
     return file_record.id, run.id
 
 
+def _outcome(record: BookRecord) -> EnrichOutcome:
+    return EnrichOutcome(record=record, calls=[], canonical_sequence=0)
+
+
 def _enrich_returns(extra_title: str = "AI Title"):
-    def _impl(record: BookRecord, provider_name: str, directory_hint: Optional[dict] = None) -> BookRecord:
+    def _impl(
+        record: BookRecord,
+        provider_name: str,
+        config: AIConfigSnapshot,
+        directory_hint: Optional[dict] = None,
+    ) -> EnrichOutcome:
         record.title = extra_title
         record.authors = ["AI Author"]
         record.language = "en"
         record.source = "ai"
         record.confidence = 0.9
-        return record
+        return _outcome(record)
 
     return _impl
 
@@ -133,11 +143,12 @@ class TestHappyPath:
         monkeypatch.setenv("AI_PROVIDER", "dummy")
         captured: dict = {}
 
-        def _spy_enrich(record, provider_name, directory_hint=None):
+        def _spy_enrich(record, provider_name, config, directory_hint=None):
             captured["directory_hint"] = directory_hint
             captured["provider_name"] = provider_name
+            captured["config"] = config
             record.source = "ai"
-            return record
+            return _outcome(record)
 
         with patch("app.pipeline.process_file.enrich", side_effect=_spy_enrich):
             analyze_file(
@@ -149,6 +160,7 @@ class TestHappyPath:
 
         assert captured["directory_hint"] is None
         assert captured["provider_name"] == "dummy"
+        assert isinstance(captured["config"], AIConfigSnapshot)
 
 
 class TestEnrichStepFailure:
@@ -234,9 +246,9 @@ class TestStatusInvariants:
         observed: list[FileStatus] = []
         original_enrich = _enrich_returns()
 
-        def _watch_enrich(record, provider_name, directory_hint=None):
+        def _watch_enrich(record, provider_name, config, directory_hint=None):
             observed.append(session.get(FileRecord, file_id).status)
-            return original_enrich(record, provider_name, directory_hint)
+            return original_enrich(record, provider_name, config, directory_hint)
 
         with patch("app.pipeline.process_file.enrich", side_effect=_watch_enrich):
             analyze_file(
