@@ -10,6 +10,7 @@ from app.ai.outcome import AICallRecord, EnrichOutcome
 from app.models.book import BookRecord
 from db.models.ai_call import AICallOrigin
 from db.models.directory import Directory
+from db.models.enrichment_run import EnrichmentRun, EnrichmentTrigger
 from db.models.file_record import FileRecord
 from db.repos import ai_call_repo
 from db.repos.ai_call_repo import AICallInput
@@ -23,6 +24,13 @@ def _new_file(session) -> FileRecord:
     session.add(f)
     session.flush()
     return f
+
+
+def _new_run(session) -> EnrichmentRun:
+    run = EnrichmentRun(trigger=EnrichmentTrigger.scan)
+    session.add(run)
+    session.flush()
+    return run
 
 
 def _book() -> BookRecord:
@@ -191,3 +199,67 @@ class TestGetForFile:
         )
         session.commit()
         assert len(ai_call_repo.get_for_file(session, f.id)) == 2
+
+
+class TestGetForRun:
+    def test_returns_all_calls_for_run(self, session):
+        f = _new_file(session)
+        run = _new_run(session)
+        ai_call_repo.record_calls(
+            session,
+            AICallInput(
+                file_id=f.id,
+                enrichment_run_id=run.id,
+                config_version_id=None,
+                origin=AICallOrigin.pipeline,
+            ),
+            EnrichOutcome(
+                record=_book(),
+                calls=[_call(0, "cheap", "0.5"), _call(1, "expensive", "0.9")],
+                canonical_sequence=1,
+            ),
+        )
+        session.commit()
+
+        calls = ai_call_repo.get_for_run(session, run.id)
+        assert len(calls) == 2
+        assert {c.sequence for c in calls} == {0, 1}
+        assert all(c.enrichment_run_id == run.id for c in calls)
+
+    def test_excludes_calls_from_other_run(self, session):
+        f = _new_file(session)
+        target_run = _new_run(session)
+        other_run = _new_run(session)
+        ai_call_repo.record_calls(
+            session,
+            AICallInput(
+                file_id=f.id,
+                enrichment_run_id=target_run.id,
+                config_version_id=None,
+                origin=AICallOrigin.pipeline,
+            ),
+            EnrichOutcome(
+                record=_book(),
+                calls=[_call(0, "cheap", "0.5")],
+                canonical_sequence=0,
+            ),
+        )
+        ai_call_repo.record_calls(
+            session,
+            AICallInput(
+                file_id=f.id,
+                enrichment_run_id=other_run.id,
+                config_version_id=None,
+                origin=AICallOrigin.pipeline,
+            ),
+            EnrichOutcome(
+                record=_book(),
+                calls=[_call(0, "cheap", "0.7"), _call(1, "expensive", "0.95")],
+                canonical_sequence=1,
+            ),
+        )
+        session.commit()
+
+        calls = ai_call_repo.get_for_run(session, target_run.id)
+        assert len(calls) == 1
+        assert all(c.enrichment_run_id == target_run.id for c in calls)
