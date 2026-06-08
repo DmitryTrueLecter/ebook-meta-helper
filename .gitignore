@@ -217,3 +217,5 @@ apps/frontend/node_modules
 apps/frontend/dist
 .claude/.multi-agent
 .claude/sentinel-inbox
+.claude/settings.local.json
+worktrees
