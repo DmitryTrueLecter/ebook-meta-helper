@@ -23,8 +23,22 @@ EXPECTED_TABLES = {
     "metadata",
     "processing_logs",
     "scan_jobs",
+    "ai_calls",
+    "ai_config_versions",
 }
-EXPECTED_REVISIONS = ("001", "002", "003", "004", "005", "006", "007", "008", "009")
+EXPECTED_REVISIONS = (
+    "001",
+    "002",
+    "003",
+    "004",
+    "005",
+    "006",
+    "007",
+    "008",
+    "009",
+    "010",
+    "011",
+)
 
 
 def _run_alembic(*args: str) -> str:

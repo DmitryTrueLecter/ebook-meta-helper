@@ -142,4 +142,4 @@ class TestMigration008:
 
         with eng.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        assert version == "009"
+        assert version == "011"

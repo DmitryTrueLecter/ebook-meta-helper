@@ -1,6 +1,8 @@
-"""Data access: repositories for the seven core tables."""
+"""Data access: repositories for the core tables."""
 
 from db.repos import (
+    ai_call_repo,
+    ai_config_repo,
     directory_hint_repo,
     directory_repo,
     enrichment_run_repo,
@@ -11,6 +13,8 @@ from db.repos import (
 )
 
 __all__ = [
+    "ai_call_repo",
+    "ai_config_repo",
     "directory_repo",
     "directory_hint_repo",
     "file_repo",

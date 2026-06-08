@@ -66,6 +66,8 @@ def _run_alembic(database_url: str, *args: str) -> None:
 
 # Order matters only for documentation; FOREIGN_KEY_CHECKS=0 lets us truncate freely.
 _TABLES_TO_TRUNCATE = (
+    "ai_calls",
+    "ai_config_versions",
     "processing_logs",
     "metadata",
     "scan_jobs",
