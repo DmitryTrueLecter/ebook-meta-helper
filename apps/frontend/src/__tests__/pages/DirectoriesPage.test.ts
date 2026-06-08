@@ -12,10 +12,12 @@ function makeNode(overrides: Partial<DirectoryNode> = {}): DirectoryNode {
     name: 'root',
     path: '/lib',
     depth: 0,
+    status: 'active',
     file_count: 0,
     pending_count: 0,
     enriched_count: 0,
     accepted_count: 0,
+    missing_count: 0,
     children: [],
     ...overrides,
   }
@@ -52,6 +54,16 @@ describe('DirectoriesPage', () => {
     await flushPromises()
 
     expect(spy).toHaveBeenCalledOnce()
+  })
+
+  it('does not render a "show missing" toggle', async () => {
+    vi.spyOn(api, 'listDirectories').mockResolvedValue([])
+
+    const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
+    await flushPromises()
+
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Show missing')
   })
 
   it('shows a loading spinner while the API call is in flight', async () => {
@@ -102,6 +114,23 @@ describe('DirectoriesPage', () => {
 
     expect(wrapper.text()).toContain('fiction')
     expect(wrapper.text()).toContain('sci-fi')
+  })
+
+  it('does not render missing child directories', async () => {
+    const treeWithMissingChild = [
+      makeNode({
+        id: 1,
+        name: 'fiction',
+        children: [makeNode({ id: 2, name: 'archived-sub', status: 'missing' })],
+      }),
+    ]
+    vi.spyOn(api, 'listDirectories').mockResolvedValue(treeWithMissingChild)
+
+    const wrapper = mount(DirectoriesPage, { global: { plugins: [testRouter] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('fiction')
+    expect(wrapper.text()).not.toContain('archived-sub')
   })
 
   it('shows an empty state when the API returns no directories', async () => {

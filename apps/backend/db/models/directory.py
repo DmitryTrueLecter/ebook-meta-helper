@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, SmallInteger, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, SmallInteger, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -13,6 +14,11 @@ from db.base import Base
 if TYPE_CHECKING:
     from db.models.directory_hint import DirectoryHint
     from db.models.file_record import FileRecord
+
+
+class DirectoryStatus(str, enum.Enum):
+    active = "active"
+    missing = "missing"
 
 
 class Directory(Base):
@@ -25,6 +31,12 @@ class Directory(Base):
         Integer, ForeignKey("directories.id", ondelete="SET NULL"), nullable=True
     )
     depth: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    status: Mapped[DirectoryStatus] = mapped_column(
+        Enum(DirectoryStatus, name="directory_status"),
+        nullable=False,
+        default=DirectoryStatus.active,
+        server_default=DirectoryStatus.active.value,
+    )
     file_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     last_scanned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     discovered_at: Mapped[datetime] = mapped_column(

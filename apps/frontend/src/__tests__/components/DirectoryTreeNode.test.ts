@@ -12,10 +12,12 @@ function makeNode(overrides: Partial<DirectoryNode> = {}): DirectoryNode {
     name: 'root',
     path: '/lib/root',
     depth: 0,
+    status: 'active',
     file_count: 10,
     pending_count: 3,
     enriched_count: 4,
     accepted_count: 2,
+    missing_count: 0,
     children: [],
     ...overrides,
   }
@@ -59,6 +61,18 @@ describe('DirectoryTreeNode', () => {
     expect(wrapper.text()).toContain('7 accepted')
   })
 
+  it('exposes Discover as the only per-directory action (no analyze/scan control)', () => {
+    const wrapper = mount(DirectoryTreeNode, {
+      props: { node: makeNode() },
+      global: { plugins: [testRouter] },
+    })
+
+    const actionButtons = wrapper.findAll('button').map((b) => b.text())
+    expect(actionButtons.some((t) => t.includes('Discover'))).toBe(true)
+    expect(actionButtons.some((t) => /analyze/i.test(t))).toBe(false)
+    expect(actionButtons.some((t) => /scan/i.test(t))).toBe(false)
+  })
+
   it('navigates to the files route for this directory when the name is clicked', async () => {
     const pushSpy = vi.spyOn(testRouter, 'push').mockResolvedValue(undefined)
     const node = makeNode({ id: 99 })
@@ -75,9 +89,9 @@ describe('DirectoryTreeNode', () => {
     expect(pushSpy).toHaveBeenCalledWith({ name: 'files', params: { id: 99 } })
   })
 
-  it('calls triggerDirectoryScan and navigates to /scan when Scan is clicked', async () => {
-    const triggerSpy = vi
-      .spyOn(api, 'triggerDirectoryScan')
+  it('calls discoverDirectory and navigates to /scan when Discover is clicked', async () => {
+    const discoverSpy = vi
+      .spyOn(api, 'discoverDirectory')
       .mockResolvedValue({ id: 1, status: 'queued', files_discovered: 0, files_processed: 0, current_filename: null })
     const pushSpy = vi.spyOn(testRouter, 'push').mockResolvedValue(undefined)
     const node = makeNode({ id: 7 })
@@ -87,21 +101,21 @@ describe('DirectoryTreeNode', () => {
       global: { plugins: [testRouter] },
     })
 
-    const scanButton = wrapper.findAll('button').find((b) => b.text().includes('Scan'))
-    expect(scanButton).toBeTruthy()
-    await scanButton!.trigger('click')
+    const discoverButton = wrapper.findAll('button').find((b) => b.text().includes('Discover'))
+    expect(discoverButton).toBeTruthy()
+    await discoverButton!.trigger('click')
     await flushPromises()
 
-    expect(triggerSpy).toHaveBeenCalledWith(7)
+    expect(discoverSpy).toHaveBeenCalledWith(7)
     expect(pushSpy).toHaveBeenCalledWith({ name: 'scan' })
   })
 
-  it('disables the Scan button and shows a spinner while a scan is in flight', async () => {
-    let resolveScan: (() => void) | null = null
-    vi.spyOn(api, 'triggerDirectoryScan').mockImplementation(
+  it('disables the Discover button and shows a spinner while discovery is in flight', async () => {
+    let resolveDiscover: (() => void) | null = null
+    vi.spyOn(api, 'discoverDirectory').mockImplementation(
       () =>
         new Promise((resolve) => {
-          resolveScan = () => resolve({ id: 1, status: 'queued', files_discovered: 0, files_processed: 0, current_filename: null })
+          resolveDiscover = () => resolve({ id: 1, status: 'queued', files_discovered: 0, files_processed: 0, current_filename: null })
         }),
     )
     vi.spyOn(testRouter, 'push').mockResolvedValue(undefined)
@@ -111,20 +125,20 @@ describe('DirectoryTreeNode', () => {
       global: { plugins: [testRouter] },
     })
 
-    const scanButton = wrapper.findAll('button').find((b) => b.text().includes('Scan'))!
-    await scanButton.trigger('click')
+    const discoverButton = wrapper.findAll('button').find((b) => b.text().includes('Discover'))!
+    await discoverButton.trigger('click')
 
-    expect(scanButton.attributes('disabled')).toBeDefined()
-    expect(scanButton.html()).toContain('animate-spin')
+    expect(discoverButton.attributes('disabled')).toBeDefined()
+    expect(discoverButton.html()).toContain('animate-spin')
 
-    resolveScan!()
+    resolveDiscover!()
     await flushPromises()
 
-    expect(scanButton.attributes('disabled')).toBeUndefined()
+    expect(discoverButton.attributes('disabled')).toBeUndefined()
   })
 
-  it('surfaces a scan failure as visible error text and re-enables the button', async () => {
-    vi.spyOn(api, 'triggerDirectoryScan').mockRejectedValue(new Error('scan worker offline'))
+  it('surfaces a discover failure as visible error text and re-enables the button', async () => {
+    vi.spyOn(api, 'discoverDirectory').mockRejectedValue(new Error('discover worker offline'))
     vi.spyOn(testRouter, 'push').mockResolvedValue(undefined)
 
     const wrapper = mount(DirectoryTreeNode, {
@@ -132,12 +146,35 @@ describe('DirectoryTreeNode', () => {
       global: { plugins: [testRouter] },
     })
 
-    const scanButton = wrapper.findAll('button').find((b) => b.text().includes('Scan'))!
-    await scanButton.trigger('click')
+    const discoverButton = wrapper.findAll('button').find((b) => b.text().includes('Discover'))!
+    await discoverButton.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('scan worker offline')
-    expect(scanButton.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('discover worker offline')
+    expect(discoverButton.attributes('disabled')).toBeUndefined()
+  })
+
+  it('renders a missing badge and missing_count when the directory is archived', () => {
+    const wrapper = mount(DirectoryTreeNode, {
+      props: { node: makeNode({ status: 'missing', missing_count: 4 }) },
+      global: { plugins: [testRouter] },
+    })
+
+    expect(wrapper.find('[data-test="directory-missing-badge"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="directory-missing-count"]').text()).toContain('4 missing')
+  })
+
+  it('always hides missing child directories', async () => {
+    const liveChild = makeNode({ id: 2, name: 'live-sub', status: 'active' })
+    const goneChild = makeNode({ id: 3, name: 'gone-sub', status: 'missing' })
+    const root = makeNode({ id: 1, name: 'root', children: [liveChild, goneChild] })
+
+    const wrapper = mount(DirectoryTreeNode, {
+      props: { node: root },
+      global: { plugins: [testRouter] },
+    })
+    expect(wrapper.text()).toContain('live-sub')
+    expect(wrapper.text()).not.toContain('gone-sub')
   })
 
   it('renders children when expanded and hides them when collapsed', async () => {

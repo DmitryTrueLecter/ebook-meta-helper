@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import zipfile
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -11,11 +12,30 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from db.models.directory import Directory
-from db.models.file_record import FileRecord
+from db.models.file_record import FileRecord, FileStatus
+
+
+@dataclass
+class ScanOutcome:
+    """What a discover walk found on disk — drives metadata-read and reconcile."""
+
+    present_file_paths: set[str] = field(default_factory=set)
+    present_dir_paths: set[str] = field(default_factory=set)
+    file_ids_needing_read: list[int] = field(default_factory=list)
 
 
 SUPPORTED_EXTENSIONS = {"epub", "fb2", "mobi", "azw3", "pdf", "djvu"}
 HASH_CHUNK_SIZE = 8192
+
+# Re-queuing an enrichment-owned status would raise InvalidStatusTransition(... -> reading) and crash the cycle.
+_READABLE_STATUSES = frozenset(
+    {
+        FileStatus.pending,
+        FileStatus.read,
+        FileStatus.analyze_queued,
+        FileStatus.missing,
+    }
+)
 
 def extract_sort_order(filename: str) -> Optional[float]:
     """Extract numeric sort order from filename.
@@ -197,6 +217,19 @@ def _detect_mobi_version(header: bytes) -> str:
     return "MOBI"
 
 
+def _mtime_to_db_precision(mtime: float) -> datetime:
+    """Drop sub-second precision — the DATETIME column stores whole seconds, so an
+    unchanged file's on-disk microseconds must not read back as a content change."""
+    return datetime.fromtimestamp(mtime).replace(microsecond=0)
+
+
+def _file_change_snapshot(record: Optional[FileRecord]) -> Optional[tuple]:
+    """Content-identity tuple used to decide whether a known file must be re-read."""
+    if record is None:
+        return None
+    return (record.size, record.file_modified_at, record.format, record.sort_order)
+
+
 def compute_file_hash(path: Path) -> str:
     """Compute SHA-256 hash of a file."""
     sha256 = hashlib.sha256()
@@ -285,12 +318,13 @@ def scan_file_to_db(
         return None
     
     filename = file_path.name
+    extension = file_path.suffix.lstrip(".").lower() or None
     file_format = detect_format(file_path)
     sort_order = extract_sort_order(filename)
-    
+
     stat = file_path.stat()
     size = stat.st_size
-    modified_at = datetime.fromtimestamp(stat.st_mtime)
+    modified_at = _mtime_to_db_precision(stat.st_mtime)
     
     existing = (
         session.query(FileRecord)
@@ -314,17 +348,19 @@ def scan_file_to_db(
         file_hash = compute_file_hash(file_path)
         existing.size = size
         existing.hash = file_hash
+        existing.extension = extension
         existing.format = file_format
         existing.sort_order = sort_order
         existing.file_modified_at = modified_at
         session.flush()
         return existing
-    
+
     file_hash = compute_file_hash(file_path)
-    
+
     record = FileRecord(
         directory_id=directory.id,
         filename=filename,
+        extension=extension,
         format=file_format,
         sort_order=sort_order,
         size=size,
@@ -350,7 +386,8 @@ class DBScanner:
         self.extensions = extensions or SUPPORTED_EXTENSIONS
         self.verbose = verbose
         self._dir_cache: dict[str, Directory] = {}
-        
+        self.outcome = ScanOutcome()
+
         self.stats = {
             "directories_created": 0,
             "directories_existing": 0,
@@ -388,7 +425,8 @@ class DBScanner:
             self.session, root, None, self._dir_cache
         )
         root_dir_record.last_scanned_at = datetime.now()
-        
+        self.outcome.present_dir_paths.add(str(root))
+
         for item in root.rglob("*"):
             if item.is_dir():
                 self._process_directory(item, root)
@@ -402,11 +440,12 @@ class DBScanner:
     def _process_directory(self, dir_path: Path, root: Path) -> None:
         """Process a single directory."""
         path_str = str(dir_path)
-        
+        self.outcome.present_dir_paths.add(path_str)
+
         if path_str in self._dir_cache:
             self.stats["directories_existing"] += 1
             return
-        
+
         try:
             ensure_directory_hierarchy(
                 self.session, dir_path, root, self._dir_cache
@@ -420,16 +459,16 @@ class DBScanner:
     def _process_file(self, file_path: Path, root: Path) -> None:
         """Process a single file."""
         extension = file_path.suffix.lstrip(".").lower()
-        
+
         if extension not in self.extensions:
             self.stats["files_skipped"] += 1
             return
-        
+
         try:
             directory = ensure_directory_hierarchy(
                 self.session, file_path.parent, root, self._dir_cache
             )
-            
+
             existing = (
                 self.session.query(FileRecord)
                 .filter(
@@ -438,16 +477,29 @@ class DBScanner:
                 )
                 .first()
             )
-            
+            before = _file_change_snapshot(existing)
+            reappeared = existing is not None and existing.status == FileStatus.missing
+
             record = scan_file_to_db(self.session, file_path, directory)
-            
+
             if record:
-                if existing:
-                    self.stats["files_updated"] += 1
-                    self.log(f"  UPD: {file_path.relative_to(root)}")
-                else:
+                self.outcome.present_file_paths.add(str(file_path))
+                if existing is None:
                     self.stats["files_created"] += 1
+                    self.outcome.file_ids_needing_read.append(record.id)
                     self.log(f"  NEW: {file_path.relative_to(root)}")
+                else:
+                    self.stats["files_updated"] += 1
+                    # A `pending` row has never been read (crashed/interrupted earlier cycle),
+                    # so it always needs reading even when its bytes are unchanged on disk.
+                    stranded_pending = existing.status == FileStatus.pending
+                    content_changed = reappeared or _file_change_snapshot(record) != before
+                    needs_read = stranded_pending or (
+                        content_changed and existing.status in _READABLE_STATUSES
+                    )
+                    if needs_read:
+                        self.outcome.file_ids_needing_read.append(record.id)
+                    self.log(f"  UPD: {file_path.relative_to(root)}")
         except Exception as e:
             self.stats["errors"] += 1
             self.log(f"  ERROR (file): {file_path} - {e}")

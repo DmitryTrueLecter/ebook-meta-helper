@@ -369,12 +369,12 @@ class TestReject:
 
 
 class TestEnrich:
-    """POST /api/files/{id}/enrich — queues a new EnrichmentRun and returns 202."""
+    """POST /api/files/{id}/enrich — queues a new EnrichmentRun, sets analyze_queued, returns 202."""
 
     def test_returns_202_with_run_id_and_queues_status(self, client, monkeypatch):
         test_client, session = client
         record_before = _make_file(status_value=FileStatus.enriched)
-        record_after = _make_file(status_value=FileStatus.ai_queued)
+        record_after = _make_file(status_value=FileStatus.analyze_queued)
         run = SimpleNamespace(id=42)
 
         monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record_before)
@@ -386,15 +386,33 @@ class TestEnrich:
         body = response.json()
         assert body["enrichment_run_id"] == 42
         assert body["file_id"] == 1
-        assert body["status"] == "ai_queued"
+        assert body["status"] == "analyze_queued"
         session.commit.assert_called_once()
+
+    def test_sets_analyze_queued_not_ai_queued(self, client, monkeypatch):
+        """The endpoint must set the durable analyze marker, never the internal ai_queued transient."""
+        test_client, _ = client
+        record = _make_file(status_value=FileStatus.read)
+        captured = {}
+
+        def capture_update(_s, _id, new_status):
+            captured["status"] = new_status
+            return _make_file(status_value=new_status)
+
+        monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record)
+        monkeypatch.setattr(routes.file_repo, "update_status", capture_update)
+        monkeypatch.setattr(routes.enrichment_run_repo, "create", lambda _s, _spec: SimpleNamespace(id=1))
+
+        response = test_client.post("/api/files/1/enrich")
+        assert response.status_code == 202
+        assert captured["status"] == FileStatus.analyze_queued
 
     def test_409_on_invalid_status_transition(self, client, monkeypatch):
         test_client, _ = client
         monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: _make_file(status_value=FileStatus.reading))
 
         def boom(_s, _id, _ns):
-            raise InvalidStatusTransition(FileStatus.reading, FileStatus.ai_queued)
+            raise InvalidStatusTransition(FileStatus.reading, FileStatus.analyze_queued)
 
         monkeypatch.setattr(routes.file_repo, "update_status", boom)
 
@@ -410,7 +428,7 @@ class TestEnrich:
     def test_idempotent_when_already_queued_returns_existing_run(self, client, monkeypatch):
         """Re-POSTing /enrich on an already-queued file returns the existing run, not a new one."""
         test_client, session = client
-        record = _make_file(status_value=FileStatus.ai_queued, directory_id=7)
+        record = _make_file(status_value=FileStatus.analyze_queued, directory_id=7)
         existing_run = SimpleNamespace(id=99)
         create_calls = []
         update_calls = []
@@ -436,15 +454,15 @@ class TestEnrich:
         assert response.status_code == 202
         body = response.json()
         assert body["enrichment_run_id"] == 99
-        assert body["status"] == "ai_queued"
+        assert body["status"] == "analyze_queued"
         assert create_calls == []
         assert update_calls == []
         session.commit.assert_not_called()
 
     def test_idempotent_when_already_queued_but_no_running_run_creates_new(self, client, monkeypatch):
-        """If status is ai_queued but no running run exists, fall through to normal create."""
+        """If status is analyze_queued but no running run exists, fall through to normal create."""
         test_client, _ = client
-        record = _make_file(status_value=FileStatus.ai_queued, directory_id=7)
+        record = _make_file(status_value=FileStatus.analyze_queued, directory_id=7)
         new_run = SimpleNamespace(id=5)
 
         monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record)
@@ -454,7 +472,7 @@ class TestEnrich:
         )
         monkeypatch.setattr(
             routes.file_repo, "update_status",
-            lambda _s, _id, _ns: _make_file(status_value=FileStatus.ai_queued),
+            lambda _s, _id, _ns: _make_file(status_value=FileStatus.analyze_queued),
         )
         monkeypatch.setattr(routes.enrichment_run_repo, "create", lambda _s, _spec: new_run)
 
@@ -474,7 +492,7 @@ class TestEnrich:
         monkeypatch.setattr(routes.file_repo, "get_by_id", lambda _s, _id: record)
         monkeypatch.setattr(
             routes.file_repo, "update_status",
-            lambda _s, _id, _ns: _make_file(status_value=FileStatus.ai_queued),
+            lambda _s, _id, _ns: _make_file(status_value=FileStatus.analyze_queued),
         )
         monkeypatch.setattr(routes.enrichment_run_repo, "create", capture)
 

@@ -25,7 +25,7 @@ def test_response_format_declares_json_contract():
     assert '"edition"' in serialized
     assert '"original"' in serialized
     assert '"confidence"' in serialized
-    assert response_format["format"]["type"] == "json_schema"
+    assert response_format["type"] == "json_schema"
 
 
 def test_prompt_contains_file_context():

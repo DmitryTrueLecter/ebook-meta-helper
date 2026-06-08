@@ -24,7 +24,7 @@ EXPECTED_TABLES = {
     "processing_logs",
     "scan_jobs",
 }
-EXPECTED_REVISIONS = ("001", "002", "003", "004", "005", "006", "007")
+EXPECTED_REVISIONS = ("001", "002", "003", "004", "005", "006", "007", "008", "009")
 
 
 def _run_alembic(*args: str) -> str:
@@ -52,7 +52,7 @@ def downgrade_sql() -> str:
 
 
 class TestRevisionChain:
-    def test_all_seven_revisions_applied_in_order(self, upgrade_sql):
+    def test_all_revisions_applied_in_order(self, upgrade_sql):
         running = re.findall(r"Running upgrade (\S*) -> (\d+)", upgrade_sql)
         applied = [to_rev for _, to_rev in running]
         assert applied == list(EXPECTED_REVISIONS)
@@ -199,10 +199,14 @@ class TestMetadataDDL:
         block = _table_block(upgrade_sql, "metadata")
         assert "data JSON NOT NULL" in block
 
-    def test_isbn_char_columns(self, upgrade_sql):
+    def test_isbn_columns_created_char_then_widened(self, upgrade_sql):
+        # 005 creates the columns as CHAR; 009 widens them to VARCHAR(20) so
+        # separator-bearing real-world ISBNs fit (DMI-139).
         block = _table_block(upgrade_sql, "metadata")
         assert "isbn13 CHAR(13)" in block
         assert "isbn10 CHAR(10)" in block
+        assert "ALTER TABLE metadata MODIFY isbn13 VARCHAR(20)" in upgrade_sql
+        assert "ALTER TABLE metadata MODIFY isbn10 VARCHAR(20)" in upgrade_sql
 
     def test_fks(self, upgrade_sql):
         assert (
@@ -258,6 +262,13 @@ class TestProcessingLogsDDL:
         block = _table_block(upgrade_sql, "processing_logs")
         assert "created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)" in block
 
+    def test_message_widened_to_text(self, upgrade_sql):
+        # 006 creates message as VARCHAR(1024); 009 widens it to TEXT so the wrapped
+        # DataError + SQL text from a failed insert fits without a second crash (DMI-139).
+        block = _table_block(upgrade_sql, "processing_logs")
+        assert "message VARCHAR(1024)" in block
+        assert "ALTER TABLE processing_logs MODIFY message TEXT" in upgrade_sql
+
     def test_indexes(self, upgrade_sql):
         assert (
             "CREATE INDEX ix_processing_logs_file_created ON processing_logs "
@@ -292,6 +303,71 @@ class TestScanJobsDDL:
             "CREATE INDEX ix_scan_jobs_status_created ON scan_jobs "
             "(status, created_at DESC)" in upgrade_sql
         )
+
+
+class TestLifecycleStatesMigration:
+    """008 alters the file_status/enrichment_trigger ENUMs, adds directories.status,
+    and remaps stuck/legacy rows — verified against the offline-rendered SQL."""
+
+    def test_directory_status_column_added(self, upgrade_sql):
+        assert re.search(
+            r"ALTER TABLE directories ADD COLUMN status "
+            r"ENUM\('active',\s*'missing'\)",
+            upgrade_sql,
+        )
+
+    def test_file_status_enum_gains_new_values(self, upgrade_sql):
+        match = re.search(
+            r"ALTER TABLE file_records MODIFY status ENUM\(([^)]+)\)", upgrade_sql
+        )
+        assert match
+        values = {v.strip().strip("'") for v in match.group(1).split(",")}
+        assert {"read", "analyze_queued", "missing"} <= values
+        assert {
+            "pending",
+            "reading",
+            "read",
+            "ai_queued",
+            "analyze_queued",
+            "enriching",
+            "enriched",
+            "accepted",
+            "rejected",
+            "failed",
+            "missing",
+        } == values
+
+    def test_enrichment_trigger_enum_drops_user_directory(self, upgrade_sql):
+        match = re.search(
+            r"ALTER TABLE enrichment_runs MODIFY `trigger` ENUM\(([^)]+)\)",
+            upgrade_sql,
+        )
+        assert match
+        values = {v.strip().strip("'") for v in match.group(1).split(",")}
+        assert values == {"scan", "user_file", "retry"}
+        assert "user_directory" not in values
+
+    def test_stuck_ai_queued_rows_remapped(self, upgrade_sql):
+        assert (
+            "UPDATE file_records SET status = 'analyze_queued' "
+            "WHERE status = 'ai_queued'" in upgrade_sql
+        )
+
+    def test_legacy_user_directory_rows_remapped(self, upgrade_sql):
+        assert (
+            "UPDATE enrichment_runs SET `trigger` = 'user_file' "
+            "WHERE `trigger` = 'user_directory'" in upgrade_sql
+        )
+
+    def test_downgrade_restores_old_enums_and_drops_status(self, downgrade_sql):
+        assert "ALTER TABLE directories DROP COLUMN status" in downgrade_sql
+        file_status = re.search(
+            r"ALTER TABLE file_records MODIFY status ENUM\(([^)]+)\)", downgrade_sql
+        )
+        assert file_status
+        restored = {v.strip().strip("'") for v in file_status.group(1).split(",")}
+        assert "analyze_queued" not in restored
+        assert "missing" not in restored
 
 
 def _table_block(sql: str, table: str) -> str:

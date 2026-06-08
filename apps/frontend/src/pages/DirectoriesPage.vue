@@ -29,7 +29,8 @@ onMounted(load)
     <header class="space-y-1">
       <h1 class="text-2xl font-bold tracking-tight">Directories</h1>
       <p class="text-muted-foreground">
-        Browse scanned directories. Click a directory to view its files, or trigger a scan.
+        Browse directories. Click a directory to view its files, or run Discover to find and
+        refresh its files.
       </p>
     </header>
 
@@ -46,7 +47,7 @@ onMounted(load)
     </div>
 
     <div v-else-if="directories.length === 0" class="text-muted-foreground">
-      No directories yet. Run a scan to discover them.
+      No directories yet. Run Discover to find them.
     </div>
 
     <ul v-else class="space-y-1">

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from db.models.directory import Directory
-from db.models.file_record import FileStatus
+from db.models.directory import Directory, DirectoryStatus
+from db.models.file_record import FileRecord, FileStatus
 from db.repos import directory_repo, file_repo
 from db.repos.directory_repo import DirectoryInput, DirectoryStats
 from db.repos.file_repo import FileAttrs
@@ -123,10 +123,10 @@ class TestGetStatusCounts:
 
         counts = directory_repo.get_status_counts(session)
         assert counts[d1.id] == DirectoryStats(
-            file_count=3, pending_count=2, enriched_count=1, accepted_count=0,
+            file_count=3, pending_count=2, enriched_count=1, accepted_count=0, missing_count=0,
         )
         assert counts[d2.id] == DirectoryStats(
-            file_count=1, pending_count=0, enriched_count=0, accepted_count=1,
+            file_count=1, pending_count=0, enriched_count=0, accepted_count=1, missing_count=0,
         )
 
     def test_returns_empty_dict_when_no_files(self, session):
@@ -140,7 +140,22 @@ class TestGetStatusCounts:
 
         counts = directory_repo.get_status_counts(session)
         assert counts[d.id] == DirectoryStats(
-            file_count=1, pending_count=0, enriched_count=0, accepted_count=0,
+            file_count=1, pending_count=0, enriched_count=0, accepted_count=0, missing_count=0,
+        )
+
+    def test_missing_files_counted_separately(self, session):
+        d = directory_repo.get_or_create(session, _spec("/a", "a"))
+        f_present = file_repo.get_or_create(session, d.id, "here.epub", FileAttrs(extension="epub"))
+        f_gone = file_repo.get_or_create(session, d.id, "gone.epub", FileAttrs(extension="epub"))
+        file_repo.update_status(session, f_present.id, FileStatus.reading)
+        file_repo.update_status(session, f_present.id, FileStatus.read)
+        file_repo.update_status(session, f_gone.id, FileStatus.reading)
+        file_repo.update_status(session, f_gone.id, FileStatus.read)
+        file_repo.update_status(session, f_gone.id, FileStatus.missing)
+
+        counts = directory_repo.get_status_counts(session)
+        assert counts[d.id] == DirectoryStats(
+            file_count=2, pending_count=0, enriched_count=0, accepted_count=0, missing_count=1,
         )
 
 
@@ -154,19 +169,173 @@ class TestGetStatsForDirectory:
 
         stats = directory_repo.get_stats_for_directory(session, d.id)
         assert stats == DirectoryStats(
-            file_count=2, pending_count=1, enriched_count=1, accepted_count=0,
+            file_count=2, pending_count=1, enriched_count=1, accepted_count=0, missing_count=0,
         )
 
     def test_returns_zeroed_when_no_files(self, session):
         d = directory_repo.get_or_create(session, _spec("/empty", "empty"))
-        assert directory_repo.get_stats_for_directory(session, d.id) == DirectoryStats(0, 0, 0, 0)
+        assert directory_repo.get_stats_for_directory(session, d.id) == DirectoryStats(0, 0, 0, 0, 0)
 
 
 class TestStatsFor:
     def test_returns_stored_stats_when_present(self):
-        stats = DirectoryStats(file_count=4, pending_count=1, enriched_count=2, accepted_count=1)
+        stats = DirectoryStats(
+            file_count=4, pending_count=1, enriched_count=2, accepted_count=1, missing_count=0,
+        )
         assert directory_repo.stats_for({7: stats}, directory_id=7) is stats
 
     def test_returns_zeroed_stats_when_missing(self):
         result = directory_repo.stats_for({}, directory_id=7)
-        assert result == DirectoryStats(0, 0, 0, 0)
+        assert result == DirectoryStats(0, 0, 0, 0, 0)
+
+
+class TestGetTreeIncludeMissing:
+    def test_archived_directory_hidden_by_default(self, session):
+        active = directory_repo.get_or_create(session, _spec("/lib", "lib"))
+        archived = directory_repo.get_or_create(session, _spec("/lib/old", "old"))
+        archived.status = DirectoryStatus.missing
+        session.flush()
+
+        default_paths = {d.path for d in directory_repo.get_tree(session)}
+        all_paths = {d.path for d in directory_repo.get_tree_including_missing(session)}
+
+        assert active.path in default_paths
+        assert archived.path not in default_paths
+        assert archived.path in all_paths
+
+
+class TestReconcileMissingDirectories:
+    def _dir(self, session, path, status=DirectoryStatus.active, depth=0):
+        d = Directory(path=path, name=path.rsplit("/", 1)[-1], depth=depth, status=status)
+        session.add(d)
+        session.flush()
+        return d
+
+    def _file(self, session, directory, filename, status):
+        record = FileRecord(directory_id=directory.id, filename=filename, status=status)
+        session.add(record)
+        session.flush()
+        return record
+
+    def test_history_free_gone_directory_hard_deleted(self, session):
+        root = self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/gone", depth=1)
+        self._file(session, gone, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib"}
+        )
+
+        assert result.deleted == 1
+        assert result.archived == 0
+        assert session.get(Directory, gone.id) is None
+        assert session.get(Directory, root.id) is not None
+
+    def test_history_bearing_gone_directory_archived(self, session):
+        root = self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/keep-history", depth=1)
+        self._file(session, gone, "x.fb2", FileStatus.accepted)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib"}
+        )
+
+        assert result.archived == 1
+        assert result.deleted == 0
+        session.refresh(gone)
+        assert gone.status == DirectoryStatus.missing
+
+    def test_nested_gone_subtree_deleted_bottom_up(self, session):
+        root = self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/gone", depth=1)
+        deeper = self._dir(session, "/lib/gone/deeper", depth=2)
+        self._file(session, deeper, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib"}
+        )
+
+        assert result.deleted == 2
+        assert session.get(Directory, gone.id) is None
+        assert session.get(Directory, deeper.id) is None
+
+    def test_reappeared_directory_recovered_to_active(self, session):
+        self._dir(session, "/lib")
+        archived = self._dir(session, "/lib/back", status=DirectoryStatus.missing, depth=1)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib", "/lib/back"}
+        )
+
+        assert result.recovered == 1
+        session.refresh(archived)
+        assert archived.status == DirectoryStatus.active
+
+    def test_gone_parent_with_live_child_left_active(self, session):
+        self._dir(session, "/lib")
+        parent = self._dir(session, "/lib/parent", depth=1)
+        self._dir(session, "/lib/parent/live", depth=2)
+
+        # parent is gone from disk, but its child still exists.
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib", "/lib/parent/live"}
+        )
+
+        assert "/lib/parent" in result.live_child_anomalies
+        session.refresh(parent)
+        assert parent.status == DirectoryStatus.active
+        assert session.get(Directory, parent.id) is not None
+
+    # --- Regression: production incident where discover wiped the whole existing tree ---
+    # The scanner reports filesystem paths in a normalized/resolved form. Directory rows
+    # created by an earlier scanner store the same dirs in a slightly different textual
+    # form (trailing slash, non-normalized). The retire logic compared paths by exact
+    # string, so a dir that was STILL ON DISK looked "gone" and was deleted/archived.
+
+    def test_present_directory_in_different_path_format_is_not_retired(self, session):
+        # Dir is on disk; scanner reports it with a trailing slash. Must survive untouched.
+        root = self._dir(session, "/lib")
+        kept = self._dir(session, "/lib/scifi", depth=1)
+        self._file(session, kept, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib/", "/lib/scifi/"}
+        )
+
+        assert result.deleted == 0
+        assert result.archived == 0
+        assert session.get(Directory, kept.id) is not None
+
+    def test_total_path_format_mismatch_does_not_wipe_tree(self, session):
+        # The incident: every stored path is in a format that does not string-match the
+        # scanner's output, yet all dirs are still on disk. The whole tree must survive —
+        # history-free dirs must NOT be hard-deleted, history-bearing must NOT be archived.
+        self._dir(session, "/books")
+        a = self._dir(session, "/books/a", depth=1)
+        b = self._dir(session, "/books/b", depth=1)
+        self._file(session, a, "x.fb2", FileStatus.read)
+        self._file(session, b, "y.fb2", FileStatus.accepted)  # history-bearing
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/books", {"/books/", "/books/a/", "/books/b/"}
+        )
+
+        assert result.deleted == 0
+        assert result.archived == 0
+        assert session.get(Directory, a.id) is not None
+        session.refresh(b)
+        assert b.status == DirectoryStatus.active
+
+    def test_genuinely_gone_directory_still_retired_after_normalization(self, session):
+        # Guard against over-correction: a dir truly absent from disk must still be retired,
+        # even when present paths arrive in non-normalized form.
+        self._dir(session, "/lib")
+        gone = self._dir(session, "/lib/gone", depth=1)
+        self._file(session, gone, "x.fb2", FileStatus.read)
+
+        result = directory_repo.reconcile_missing_directories(
+            session, "/lib", {"/lib/"}  # only root present, /lib/gone is absent
+        )
+
+        assert result.deleted == 1
+        assert session.get(Directory, gone.id) is None

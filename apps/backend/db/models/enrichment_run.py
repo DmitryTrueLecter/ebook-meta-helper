@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 class EnrichmentTrigger(str, enum.Enum):
     scan = "scan"
-    user_directory = "user_directory"
     user_file = "user_file"
     retry = "retry"
 

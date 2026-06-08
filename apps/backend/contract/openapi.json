@@ -1,0 +1,1217 @@
+{
+  "components": {
+    "schemas": {
+      "DirectoryDetail": {
+        "description": "Single directory with the contained file list.",
+        "properties": {
+          "accepted_count": {
+            "title": "Accepted Count",
+            "type": "integer"
+          },
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "enriched_count": {
+            "title": "Enriched Count",
+            "type": "integer"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileListItem"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "pending_count": {
+            "title": "Pending Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "depth",
+          "file_count",
+          "pending_count",
+          "enriched_count",
+          "accepted_count"
+        ],
+        "title": "DirectoryDetail",
+        "type": "object"
+      },
+      "DirectoryNode": {
+        "description": "Directory tree node with aggregated file counts and nested children.",
+        "properties": {
+          "accepted_count": {
+            "title": "Accepted Count",
+            "type": "integer"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/DirectoryNode"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "enriched_count": {
+            "title": "Enriched Count",
+            "type": "integer"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "missing_count": {
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "pending_count": {
+            "title": "Pending Count",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DirectoryStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "depth",
+          "status",
+          "file_count",
+          "pending_count",
+          "enriched_count",
+          "accepted_count",
+          "missing_count"
+        ],
+        "title": "DirectoryNode",
+        "type": "object"
+      },
+      "DirectoryStatus": {
+        "enum": [
+          "active",
+          "missing"
+        ],
+        "title": "DirectoryStatus",
+        "type": "string"
+      },
+      "EnrichmentTriggerResponse": {
+        "description": "202 response from POST /api/files/{id}/enrich \u2014 exposes the new run id.",
+        "properties": {
+          "enrichment_run_id": {
+            "title": "Enrichment Run Id",
+            "type": "integer"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus"
+          }
+        },
+        "required": [
+          "enrichment_run_id",
+          "file_id",
+          "status"
+        ],
+        "title": "EnrichmentTriggerResponse",
+        "type": "object"
+      },
+      "FileDetail": {
+        "description": "Single file with current `file` and `ai` metadata snapshots.",
+        "properties": {
+          "ai_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetadataSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "directory_id": {
+            "title": "Directory Id",
+            "type": "integer"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extension"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetadataSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus"
+          }
+        },
+        "required": [
+          "id",
+          "directory_id",
+          "filename",
+          "extension",
+          "format",
+          "status",
+          "sort_order",
+          "error_message",
+          "file_metadata",
+          "ai_metadata"
+        ],
+        "title": "FileDetail",
+        "type": "object"
+      },
+      "FileListItem": {
+        "description": "One row in a file listing.",
+        "properties": {
+          "extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extension"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "has_ai_suggestion": {
+            "title": "Has Ai Suggestion",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "extension",
+          "format",
+          "status",
+          "has_ai_suggestion",
+          "sort_order"
+        ],
+        "title": "FileListItem",
+        "type": "object"
+      },
+      "FileStatus": {
+        "enum": [
+          "pending",
+          "reading",
+          "read",
+          "ai_queued",
+          "analyze_queued",
+          "enriching",
+          "enriched",
+          "accepted",
+          "rejected",
+          "failed",
+          "missing"
+        ],
+        "title": "FileStatus",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MetadataSnapshot": {
+        "description": "One metadata revision (file / ai / accepted).",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "isbn13": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isbn13"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
+          },
+          "series_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Index"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "is_current",
+          "title",
+          "subtitle",
+          "language",
+          "series",
+          "series_index",
+          "isbn13",
+          "confidence",
+          "data",
+          "created_at"
+        ],
+        "title": "MetadataSnapshot",
+        "type": "object"
+      },
+      "PaginatedFiles": {
+        "description": "Paginated file listing \u2014 `items` plus page metadata.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedFiles",
+        "type": "object"
+      },
+      "ProcessingLogEntry": {
+        "description": "One entry from the processing log for a file.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "level",
+          "message",
+          "duration_ms",
+          "created_at"
+        ],
+        "title": "ProcessingLogEntry",
+        "type": "object"
+      },
+      "ScanJobProgress": {
+        "description": "Progress snapshot of a scan job.",
+        "properties": {
+          "current_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Filename"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "files_discovered": {
+            "title": "Files Discovered",
+            "type": "integer"
+          },
+          "files_processed": {
+            "title": "Files Processed",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScanJobStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "files_discovered",
+          "files_processed",
+          "current_filename",
+          "error_message"
+        ],
+        "title": "ScanJobProgress",
+        "type": "object"
+      },
+      "ScanJobStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "title": "ScanJobStatus",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "ebook-meta-helper API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/directories": {
+      "get": {
+        "description": "Directory tree with per-directory counts; archived (`missing`) directories hidden unless `include_missing`.",
+        "operationId": "list_directory_tree_api_directories_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_missing",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Missing",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DirectoryNode"
+                  },
+                  "title": "Response List Directory Tree Api Directories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Directory Tree",
+        "tags": [
+          "directories"
+        ]
+      }
+    },
+    "/api/directories/{directory_id}": {
+      "get": {
+        "description": "Single directory with its file list \u2014 optional `?status=<FileStatus>` filter.",
+        "operationId": "get_directory_detail_api_directories__directory_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "directory_id",
+            "required": true,
+            "schema": {
+              "title": "Directory Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Directory Detail",
+        "tags": [
+          "directories"
+        ]
+      }
+    },
+    "/api/directories/{directory_id}/discover": {
+      "post": {
+        "description": "Enqueue a discover job (FS\u2194DB sync + read file metadata, NO AI); watcher runs it.",
+        "operationId": "trigger_directory_discover_api_directories__directory_id__discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "directory_id",
+            "required": true,
+            "schema": {
+              "title": "Directory Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanJobProgress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Directory Discover",
+        "tags": [
+          "directories"
+        ]
+      }
+    },
+    "/api/files": {
+      "get": {
+        "description": "Paginated file listing with optional `directory_id` and `status` filters.",
+        "operationId": "list_files_api_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "directory_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Directory Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedFiles"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Files",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}": {
+      "get": {
+        "description": "Single file with the current `file` and `ai` metadata snapshots projected.",
+        "operationId": "get_file_detail_api_files__file_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Detail",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}/accept": {
+      "post": {
+        "description": "Apply the current AI suggestion \u2014 write metadata back, rename, move, snapshot, mark accepted.",
+        "operationId": "accept_file_endpoint_api_files__file_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileListItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept File Endpoint",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}/enrich": {
+      "post": {
+        "description": "Queue the file for AI analyze \u2014 watcher analyze-drain picks up `analyze_queued` rows.",
+        "operationId": "enrich_file_endpoint_api_files__file_id__enrich_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichmentTriggerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrich File Endpoint",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}/logs": {
+      "get": {
+        "description": "Last `limit` processing-log entries for the file \u2014 newest first (capped at 200).",
+        "operationId": "list_file_logs_api_files__file_id__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessingLogEntry"
+                  },
+                  "title": "Response List File Logs Api Files  File Id  Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List File Logs",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}/metadata": {
+      "get": {
+        "description": "Full metadata history for the file \u2014 newest first.",
+        "operationId": "list_file_metadata_api_files__file_id__metadata_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MetadataSnapshot"
+                  },
+                  "title": "Response List File Metadata Api Files  File Id  Metadata Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List File Metadata",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}/reject": {
+      "post": {
+        "description": "Mark the file as rejected without touching the file on disk.",
+        "operationId": "reject_file_endpoint_api_files__file_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileListItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject File Endpoint",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/scan/status": {
+      "get": {
+        "description": "Return the active (running/pending) scan job, falling back to the most recent completed one.\n\nFrontend polls this every 2s during an active scan. Returns `null` when no job exists yet.",
+        "operationId": "get_scan_status_api_scan_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ScanJobProgress"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Scan Status Api Scan Status Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scan Status",
+        "tags": [
+          "scan"
+        ]
+      }
+    }
+  }
+}

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from app.api.schemas import ScanJobStatus
+from app.api.schemas import ScanJobProgress
 from db.models.scan_job import ScanJob
 
 
-def to_scan_status(job: ScanJob) -> ScanJobStatus:
+def to_scan_status(job: ScanJob) -> ScanJobProgress:
     current_filename = job.current_file.filename if job.current_file is not None else None
-    return ScanJobStatus(
+    return ScanJobProgress(
         id=job.id,
         status=job.status.value,
         files_discovered=job.files_discovered,

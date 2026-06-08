@@ -30,6 +30,8 @@ devops_paths:
   - ".dockerignore"
   - "Justfile"
   - ".env.example"
+  - ".github/**"
+  - ".claude/devops/**"   # devops owns its own knowledge base (environments.md, runbooks)
 
 runtime:
 
