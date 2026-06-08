@@ -34,9 +34,10 @@ class DummyAIProvider(AIProvider):
         )
         return EnrichOutcome(record=record, calls=[call], canonical_sequence=0)
 
-    def summarize_directory(self, files: list[BookRecord]) -> dict:
-        """Deterministic fake summary derived from the longest common
-        directory prefix. Used in tests; performs no API calls."""
+    def summarize_directory(
+        self, files: list[BookRecord], config: AIConfigSnapshot
+    ) -> dict:
+        """Deterministic fake summary from the longest common directory prefix; no API calls."""
         series_name = _common_directory_basename(files)
         return {
             "series_name": series_name,

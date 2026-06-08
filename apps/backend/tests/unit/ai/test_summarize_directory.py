@@ -2,8 +2,9 @@
 
 import pytest
 
+from app.ai.base import AIConfigSnapshot
 from app.ai.providers.dummy import DummyAIProvider
-from app.ai.providers.openai_provider import OpenAIProvider
+from app.ai.providers.openai_provider import OpenAIProvider, _OpenAICall
 from app.ai.prompt.book_metadata import build_book_metadata_prompt
 from app.ai.prompt.directory_summary import (
     SUMMARY_KEYS,
@@ -26,16 +27,40 @@ def _book(filename: str, directories: list[str]) -> BookRecord:
     )
 
 
+def _config() -> AIConfigSnapshot:
+    return AIConfigSnapshot(
+        system_prompt="sys",
+        cheap_model="cheap-model",
+        expensive_model="expensive-model",
+        escalation_threshold=0.7,
+        response_format_ref="directory_summary",
+        provider="openai",
+        effort="high",
+    )
+
+
+def _summary_call(parsed: dict) -> _OpenAICall:
+    return _OpenAICall(
+        parsed=parsed,
+        system_prompt="sys",
+        user_prompt="usr",
+        raw_response="{}",
+        prompt_tokens=None,
+        completion_tokens=None,
+        duration_ms=0,
+    )
+
+
 class TestDummySummarizeDirectory:
     def test_returns_canonical_shape(self):
         files = [_book("a.fb2", ["warhammer", "heresy"])]
-        summary = DummyAIProvider().summarize_directory(files)
+        summary = DummyAIProvider().summarize_directory(files, _config())
         assert set(summary.keys()) == set(SUMMARY_KEYS)
 
     def test_is_deterministic_for_same_input(self):
         files = [_book("a.fb2", ["scifi", "asimov"]), _book("b.fb2", ["scifi", "asimov"])]
-        first = DummyAIProvider().summarize_directory(files)
-        second = DummyAIProvider().summarize_directory(files)
+        first = DummyAIProvider().summarize_directory(files, _config())
+        second = DummyAIProvider().summarize_directory(files, _config())
         assert first == second
 
     def test_series_name_uses_common_directory_basename(self):
@@ -43,7 +68,7 @@ class TestDummySummarizeDirectory:
             _book("a.fb2", ["scifi", "asimov", "foundation"]),
             _book("b.fb2", ["scifi", "asimov", "foundation"]),
         ]
-        summary = DummyAIProvider().summarize_directory(files)
+        summary = DummyAIProvider().summarize_directory(files, _config())
         assert summary["series_name"] == "foundation"
         assert summary["confidence"] == 0.5
 
@@ -52,12 +77,12 @@ class TestDummySummarizeDirectory:
             _book("a.fb2", ["scifi", "asimov"]),
             _book("b.fb2", ["fantasy", "tolkien"]),
         ]
-        summary = DummyAIProvider().summarize_directory(files)
+        summary = DummyAIProvider().summarize_directory(files, _config())
         assert summary["series_name"] is None
         assert summary["confidence"] == 0.0
 
     def test_empty_file_list_returns_empty_summary(self):
-        summary = DummyAIProvider().summarize_directory([])
+        summary = DummyAIProvider().summarize_directory([], _config())
         assert summary["series_name"] is None
         assert summary["tags"] == []
         assert summary["confidence"] == 0.0
@@ -67,28 +92,30 @@ class TestDummySummarizeDirectory:
         monkeypatch.setenv("OPENAI_API_KEY", "")
         files = [_book("a.fb2", ["x"])]
         # Should not raise even with no key configured.
-        DummyAIProvider().summarize_directory(files)
+        DummyAIProvider().summarize_directory(files, _config())
 
 
 class TestOpenAISummarizeDirectory:
     def test_normalizes_well_formed_response(self, monkeypatch):
         provider = OpenAIProvider()
 
-        def fake_call(_files):
-            return {
-                "series_name": "Horus Heresy",
-                "universe": "Warhammer 40k",
-                "genre": "military sci-fi",
-                "tags": ["warhammer 40k", "space marines"],
-                "language": "en",
-                "confidence": 0.87,
-                "notes": "Numbered sequence, single author cluster.",
-            }
+        def fake_call(_files, _config):
+            return _summary_call(
+                {
+                    "series_name": "Horus Heresy",
+                    "universe": "Warhammer 40k",
+                    "genre": "military sci-fi",
+                    "tags": ["warhammer 40k", "space marines"],
+                    "language": "en",
+                    "confidence": 0.87,
+                    "notes": "Numbered sequence, single author cluster.",
+                }
+            )
 
         monkeypatch.setattr(provider, "_call_openai_for_directory_summary", fake_call)
 
         files = [_book("01.fb2", ["wh40k", "heresy"])]
-        summary = provider.summarize_directory(files)
+        summary = provider.summarize_directory(files, _config())
 
         assert summary["series_name"] == "Horus Heresy"
         assert summary["universe"] == "Warhammer 40k"
@@ -103,9 +130,9 @@ class TestOpenAISummarizeDirectory:
         monkeypatch.setattr(
             provider,
             "_call_openai_for_directory_summary",
-            lambda _files: {"confidence": 1.5, "tags": []},
+            lambda _files, _config: _summary_call({"confidence": 1.5, "tags": []}),
         )
-        summary = provider.summarize_directory([_book("a.fb2", ["x"])])
+        summary = provider.summarize_directory([_book("a.fb2", ["x"])], _config())
         assert summary["confidence"] == 1.0
 
     def test_drops_unexpected_fields(self, monkeypatch):
@@ -113,13 +140,15 @@ class TestOpenAISummarizeDirectory:
         monkeypatch.setattr(
             provider,
             "_call_openai_for_directory_summary",
-            lambda _files: {
-                "series_name": "S",
-                "rogue_key": "should not appear",
-                "tags": ["t"],
-            },
+            lambda _files, _config: _summary_call(
+                {
+                    "series_name": "S",
+                    "rogue_key": "should not appear",
+                    "tags": ["t"],
+                }
+            ),
         )
-        summary = provider.summarize_directory([_book("a.fb2", ["x"])])
+        summary = provider.summarize_directory([_book("a.fb2", ["x"])], _config())
         assert "rogue_key" not in summary
         assert set(summary.keys()) == set(SUMMARY_KEYS)
 
@@ -128,9 +157,11 @@ class TestOpenAISummarizeDirectory:
         monkeypatch.setattr(
             provider,
             "_call_openai_for_directory_summary",
-            lambda _files: {"series_name": "", "tags": ["", "t"], "notes": ""},
+            lambda _files, _config: _summary_call(
+                {"series_name": "", "tags": ["", "t"], "notes": ""}
+            ),
         )
-        summary = provider.summarize_directory([_book("a.fb2", ["x"])])
+        summary = provider.summarize_directory([_book("a.fb2", ["x"])], _config())
         assert summary["series_name"] is None
         assert summary["tags"] == ["t"]
         assert summary["notes"] is None
@@ -138,21 +169,21 @@ class TestOpenAISummarizeDirectory:
     def test_propagates_transport_error(self, monkeypatch):
         provider = OpenAIProvider()
 
-        def boom(_files):
+        def boom(_files, _config):
             raise RuntimeError("upstream 500")
 
         monkeypatch.setattr(provider, "_call_openai_for_directory_summary", boom)
         with pytest.raises(RuntimeError, match="upstream 500"):
-            provider.summarize_directory([_book("a.fb2", ["x"])])
+            provider.summarize_directory([_book("a.fb2", ["x"])], _config())
 
     def test_empty_file_list_short_circuits_without_api_call(self, monkeypatch):
         provider = OpenAIProvider()
 
-        def boom(_files):  # pragma: no cover — must not be called
+        def boom(_files, _config):  # pragma: no cover — must not be called
             raise AssertionError("API should not be touched for empty input")
 
         monkeypatch.setattr(provider, "_call_openai_for_directory_summary", boom)
-        summary = provider.summarize_directory([])
+        summary = provider.summarize_directory([], _config())
         assert summary == empty_summary()
 
 

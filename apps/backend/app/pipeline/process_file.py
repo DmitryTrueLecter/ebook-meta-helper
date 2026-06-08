@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.base import AIConfigSnapshot
 from app.ai.enrich import enrich
+from app.ai.prompt.book_metadata import build_system_prompt
 from app.metadata.cleaner import clean_record
 from app.metadata.reader.registry import read_metadata
 from app.models.book import BookRecord
@@ -32,10 +33,11 @@ class _StepContext:
 
 
 def _default_ai_config(provider_name: str) -> AIConfigSnapshot:
-    """Transitional snapshot until DMI-148 loads the active AIConfigVersion from the DB."""
+    # Transitional: the snapshot is built from env here so the provider stays config-driven;
+    # the DB-backed active AIConfigVersion replaces this builder, not the provider boundary.
     model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
     return AIConfigSnapshot(
-        system_prompt="",
+        system_prompt=build_system_prompt(),
         cheap_model=model,
         expensive_model=model,
         escalation_threshold=0.0,

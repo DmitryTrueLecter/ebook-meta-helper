@@ -62,6 +62,8 @@ class AIProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def summarize_directory(self, files: list[BookRecord]) -> dict:
+    def summarize_directory(
+        self, files: list[BookRecord], config: AIConfigSnapshot
+    ) -> dict:
         """Collapse a directory of files into the SUMMARY_KEYS-shaped hint dict."""
         raise NotImplementedError
