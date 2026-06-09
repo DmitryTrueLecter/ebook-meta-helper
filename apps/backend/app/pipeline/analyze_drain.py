@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from app.ai.base import AIConfigSnapshot
 from app.models.book import BookRecord
 from app.pipeline.process_file import AnalyzeRequest, analyze_file
-from db.models.ai_config_version import AIConfigVersion
 from db.models.directory import Directory
 from db.models.enrichment_run import EnrichmentRun, EnrichmentTrigger
 from db.models.file_record import FileRecord
@@ -74,6 +73,15 @@ def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool
         active = ai_config_repo.get_active(session)
         if active is None:
             raise RuntimeError("no active AIConfigVersion — seed migration 011 must run before analyze")
+        config = AIConfigSnapshot(
+            system_prompt=active.system_prompt,
+            cheap_model=active.cheap_model,
+            expensive_model=active.expensive_model,
+            escalation_threshold=float(active.escalation_threshold),
+            response_format_ref=active.response_format_ref,
+            provider=active.provider,
+            effort=active.effort,
+        )
         run = _resolve_run(session, claimed.directory_id)
         _stamp_config_version(session, run, active.id)
         session.commit()
@@ -83,7 +91,7 @@ def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool
                 file_id=claimed.file_id,
                 enrichment_run_id=run.id,
                 session=session,
-                config=_snapshot_from_version(active),
+                config=config,
                 config_version_id=active.id,
             )
         )
@@ -92,19 +100,6 @@ def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool
         else:
             _fail_run(session, run.id)
         return enrich_result.success
-
-
-def _snapshot_from_version(version: AIConfigVersion) -> AIConfigSnapshot:
-    """Project the active config version into the runtime snapshot the provider reads."""
-    return AIConfigSnapshot(
-        system_prompt=version.system_prompt,
-        cheap_model=version.cheap_model,
-        expensive_model=version.expensive_model,
-        escalation_threshold=float(version.escalation_threshold),
-        response_format_ref=version.response_format_ref,
-        provider=version.provider,
-        effort=version.effort,
-    )
 
 
 def _resolve_run(session: Session, directory_id: int) -> EnrichmentRun:
