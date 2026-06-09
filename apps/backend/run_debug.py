@@ -4,12 +4,27 @@ from typing import List
 
 from dotenv import load_dotenv
 
+from app.ai.base import AIConfigSnapshot
 from app.ai.enrich import enrich
-from app.pipeline.process_file import _default_ai_config
+from app.ai.prompt.book_metadata import build_system_prompt
 from app.metadata import read_metadata
 from app.models.book import BookRecord
 from app.scanner.directory_scanner import scan_directory
 from app.utils.debug import Debugger
+
+
+def _debug_ai_config(provider_name: str) -> AIConfigSnapshot:
+    """Env-driven snapshot for the standalone debug run, which has no DB-backed active config version."""
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    return AIConfigSnapshot(
+        system_prompt=build_system_prompt(),
+        cheap_model=model,
+        expensive_model=model,
+        escalation_threshold=0.0,
+        response_format_ref="book_metadata.v2",
+        provider=provider_name,
+        effort="high",
+    )
 
 
 def run_debug() -> None:
@@ -53,7 +68,7 @@ def process_file_debug(record: BookRecord) -> None:
         outcome = enrich(
             record,
             provider_name=ai_provider,
-            config=_default_ai_config(ai_provider),
+            config=_debug_ai_config(ai_provider),
         )
         debugger.log("ai_enrich", "AI metadata enrichment", outcome.record)
         records.append(outcome.record)

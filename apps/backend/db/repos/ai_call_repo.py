@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.outcome import EnrichOutcome
+from app.ai.base import EnrichOutcome
 from db.models.ai_call import AICall, AICallOrigin
 
 

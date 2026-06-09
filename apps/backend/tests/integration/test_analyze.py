@@ -17,13 +17,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from fastapi.testclient import TestClient
 
-from app.ai.base import EnrichOutcome
+from decimal import Decimal
+
+from app.ai.base import AICallRecord, EnrichOutcome
 from app.api.deps import get_db
 from app.api.main import app
 from app.models.book import BookRecord
 from app.pipeline import analyze_drain
 from app.pipeline.analyze_drain import drain_one_analyze
 from app.pipeline.scan_cycle import run_scan_cycle
+from db.models.ai_call import AICall
+from db.models.ai_config_version import AIConfigVersion
 from db.models.directory import Directory
 from db.models.enrichment_run import EnrichmentRun, EnrichmentStatus, EnrichmentTrigger
 from db.models.file_record import FileRecord, FileStatus
@@ -56,8 +60,42 @@ def session_factory(engine: Engine):
 
 
 @pytest.fixture
-def stub_provider(monkeypatch):
-    """Stub the OpenAI call: record invocations and return a deterministic AI BookRecord."""
+def active_config(session) -> int:
+    """Seed the single active AIConfigVersion the drain reads — truncate wipes the migration-seeded row."""
+    version = AIConfigVersion(
+        version=1,
+        label="test",
+        system_prompt="sys",
+        cheap_model="gpt-4o-mini",
+        expensive_model="gpt-4o",
+        effort="high",
+        escalation_threshold=Decimal("0.700"),
+        provider="openai",
+        response_format_ref="book_metadata.v2",
+        is_active=True,
+    )
+    session.add(version)
+    session.commit()
+    return version.id
+
+
+def _call(sequence: int, tier: str, confidence: float) -> AICallRecord:
+    return AICallRecord(
+        system_prompt="sys",
+        user_prompt="user",
+        raw_response="{}",
+        model="gpt-4o-mini",
+        response_format_ref="book_metadata.v2",
+        duration_ms=10,
+        tier=tier,
+        sequence=sequence,
+        confidence=confidence,
+    )
+
+
+@pytest.fixture
+def stub_provider(monkeypatch, active_config):
+    """Stub the OpenAI call: record invocations and return a single-call AI outcome."""
     calls: list[BookRecord] = []
 
     def fake_enrich(record, provider_name, config, directory_hint=None):
@@ -73,7 +111,9 @@ def stub_provider(monkeypatch):
             source="ai",
             confidence=0.95,
         )
-        return EnrichOutcome(record=ai, calls=[], canonical_sequence=0)
+        return EnrichOutcome(
+            record=ai, calls=[_call(0, "cheap", 0.95)], canonical_sequence=0
+        )
 
     monkeypatch.setenv("AI_PROVIDER", "dummy")
     monkeypatch.setattr("app.pipeline.process_file.enrich", fake_enrich)
@@ -161,10 +201,19 @@ class TestAnalyzeDrainEnriches:
         # Exactly one OpenAI call for the one file.
         assert len(stub_provider) == 1
 
-        # The user_file run was opened by the endpoint and closed by the drain.
+        # The single AI call is persisted as the canonical row for this file/run.
         run = session.execute(select(EnrichmentRun)).scalar_one()
+        ai_call = session.execute(
+            select(AICall).where(AICall.file_id == file_id)
+        ).scalar_one()
+        assert ai_call.is_canonical is True
+        assert ai_call.enrichment_run_id == run.id
+        assert ai_call.config_version_id == run.config_version_id
+
+        # The user_file run was opened by the endpoint and closed by the drain.
         assert run.trigger == EnrichmentTrigger.user_file
         assert run.status == EnrichmentStatus.done
+        assert run.config_version_id is not None
 
     def test_drain_returns_none_when_queue_empty(self, session, session_factory):
         assert drain_one_analyze(session_factory) is None
@@ -212,6 +261,103 @@ class TestAnalyzeDrainEnriches:
 
         session.commit()
         assert session.get(FileRecord, file_id).status == FileStatus.enriched
+
+
+@pytest.fixture
+def stub_escalating_provider(monkeypatch, active_config):
+    """Stub a low-then-high escalation chain: cheap 0.40 then expensive 0.95, canonical = expensive."""
+
+    def fake_enrich(record, provider_name, config, directory_hint=None):
+        ai = BookRecord(
+            path=record.path,
+            original_filename=record.original_filename,
+            extension=record.extension,
+            directories=list(record.directories),
+            title="Expensive Winner",
+            authors=["AI Author"],
+            language="en",
+            source="ai",
+            confidence=0.95,
+        )
+        return EnrichOutcome(
+            record=ai,
+            calls=[_call(0, "cheap", 0.40), _call(1, "expensive", 0.95)],
+            canonical_sequence=1,
+        )
+
+    monkeypatch.setenv("AI_PROVIDER", "dummy")
+    monkeypatch.setattr("app.pipeline.process_file.enrich", fake_enrich)
+
+
+class TestPersistsCallChain:
+    def test_escalation_persists_one_canonical_highest_confidence_row(
+        self, tmp_path, session, session_factory, stub_escalating_provider, active_config
+    ):
+        """INVARIANT: exactly one is_canonical=True per (file_id, run), and it is the highest-confidence call."""
+        library = tmp_path / "library"
+        _copy(FB2_FIXTURE, library / "sci-fi", "book.fb2")
+        _discover(library, session_factory)
+
+        record = session.execute(select(FileRecord)).scalar_one()
+        file_id = record.id
+        _enrich(session, file_id)
+        session.commit()
+
+        result = drain_one_analyze(session_factory)
+        assert result.success is True
+        session.commit()
+
+        run = session.execute(select(EnrichmentRun)).scalar_one()
+        chain = list(
+            session.execute(
+                select(AICall)
+                .where(AICall.file_id == file_id, AICall.enrichment_run_id == run.id)
+                .order_by(AICall.sequence)
+            ).scalars()
+        )
+        assert [c.sequence for c in chain] == [0, 1]
+        canonical = [c for c in chain if c.is_canonical]
+        assert len(canonical) == 1
+        assert canonical[0].sequence == 1
+        assert float(canonical[0].confidence) == 0.95
+        assert canonical[0].confidence == max(c.confidence for c in chain)
+        # Provenance: run and each call carry the active config version.
+        assert run.config_version_id == active_config
+        assert all(c.config_version_id == active_config for c in chain)
+        assert all(c.origin.value == "pipeline" for c in chain)
+
+    def test_full_analyze_persists_highest_as_canonical_metadata_and_both_calls(
+        self, tmp_path, session, session_factory, stub_escalating_provider
+    ):
+        """SCENARIO: scripted low-then-high → highest is canonical Metadata.ai; both ai_call rows retrievable."""
+        library = tmp_path / "library"
+        _copy(FB2_FIXTURE, library / "sci-fi", "book.fb2")
+        _discover(library, session_factory)
+
+        record = session.execute(select(FileRecord)).scalar_one()
+        file_id = record.id
+        _enrich(session, file_id)
+        session.commit()
+
+        assert drain_one_analyze(session_factory).success is True
+        session.commit()
+
+        ai_snapshot = session.execute(
+            select(Metadata).where(
+                Metadata.file_id == file_id,
+                Metadata.source == MetadataSource.ai,
+                Metadata.is_current.is_(True),
+            )
+        ).scalar_one()
+        assert ai_snapshot.title == "Expensive Winner"
+
+        both = list(
+            session.execute(
+                select(AICall).where(AICall.file_id == file_id).order_by(AICall.sequence)
+            ).scalars()
+        )
+        assert len(both) == 2
+        assert {c.tier.value for c in both} == {"cheap", "expensive"}
 
 
 class TestNoAutoAnalyze:

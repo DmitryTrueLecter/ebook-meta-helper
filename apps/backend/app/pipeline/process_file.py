@@ -12,15 +12,16 @@ from sqlalchemy.orm import Session
 
 from app.ai.base import AIConfigSnapshot
 from app.ai.enrich import enrich
-from app.ai.prompt.book_metadata import build_system_prompt
 from app.metadata.cleaner import clean_record
 from app.metadata.reader.registry import read_metadata
 from app.models.book import BookRecord
 from app.models.pipeline import PipelineResult
+from db.models.ai_call import AICallOrigin
 from db.models.file_record import FileStatus
 from db.models.metadata import MetadataSource
 from db.models.processing_log import ProcessingLogLevel, ProcessingStep
-from db.repos import file_repo, log_repo, metadata_repo
+from db.repos import ai_call_repo, file_repo, log_repo, metadata_repo
+from db.repos.ai_call_repo import AICallInput
 from db.repos.log_repo import LogEntry
 from db.repos.metadata_repo import MetadataInput, MetadataScalars
 
@@ -32,19 +33,16 @@ class _StepContext:
     session: Session
 
 
-def _default_ai_config(provider_name: str) -> AIConfigSnapshot:
-    # Transitional: the snapshot is built from env here so the provider stays config-driven;
-    # the DB-backed active AIConfigVersion replaces this builder, not the provider boundary.
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    return AIConfigSnapshot(
-        system_prompt=build_system_prompt(),
-        cheap_model=model,
-        expensive_model=model,
-        escalation_threshold=0.0,
-        response_format_ref="book_edition_info",
-        provider=provider_name,
-        effort="high",
-    )
+@dataclass(frozen=True)
+class AnalyzeRequest:
+    """Everything analyze_file needs for one AI-only enrich: call identity, session, and active config."""
+
+    record: BookRecord
+    file_id: int
+    enrichment_run_id: int
+    session: Session
+    config: AIConfigSnapshot
+    config_version_id: Optional[int]
 
 
 def read_file_metadata(
@@ -89,14 +87,13 @@ def read_file_metadata(
     return PipelineResult(success=True, record=cleaned)
 
 
-def analyze_file(
-    record: BookRecord,
-    file_id: int,
-    enrichment_run_id: int,
-    session: Session,
-) -> PipelineResult:
-    """AI-only enrich of an already-read file — drives reading→enriched/failed."""
-    ctx = _StepContext(file_id=file_id, enrichment_run_id=enrichment_run_id, session=session)
+def analyze_file(request: AnalyzeRequest) -> PipelineResult:
+    """AI-only enrich of an already-read file — drives reading→enriched/failed and persists the call chain."""
+    ctx = _StepContext(
+        file_id=request.file_id,
+        enrichment_run_id=request.enrichment_run_id,
+        session=request.session,
+    )
     file_repo.update_status(ctx.session, ctx.file_id, FileStatus.enriching)
     ctx.session.commit()  # release the lock before the network call
 
@@ -104,13 +101,27 @@ def analyze_file(
         provider_name = os.environ.get("AI_PROVIDER")
         if not provider_name:
             raise RuntimeError("AI_PROVIDER is not set")
-        config = _default_ai_config(provider_name)
-        outcome = enrich(record, provider_name=provider_name, config=config, directory_hint=None)
+        outcome = enrich(
+            request.record,
+            provider_name=provider_name,
+            config=request.config,
+            directory_hint=None,
+        )
         cleaned = clean_record(outcome.record)
     except Exception as exc:
         return _fail(ctx, ProcessingStep.ai_enrich, exc)
 
     try:
+        ai_call_repo.record_calls(
+            ctx.session,
+            AICallInput(
+                file_id=ctx.file_id,
+                enrichment_run_id=ctx.enrichment_run_id,
+                config_version_id=request.config_version_id,
+                origin=AICallOrigin.pipeline,
+            ),
+            outcome,
+        )
         metadata_repo.create(
             ctx.session,
             MetadataInput(
