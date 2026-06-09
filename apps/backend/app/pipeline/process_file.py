@@ -10,7 +10,9 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
+from app.ai.base import AIConfigSnapshot
 from app.ai.enrich import enrich
+from app.ai.prompt.book_metadata import build_system_prompt
 from app.metadata.cleaner import clean_record
 from app.metadata.reader.registry import read_metadata
 from app.models.book import BookRecord
@@ -28,6 +30,21 @@ class _StepContext:
     file_id: int
     enrichment_run_id: Optional[int]
     session: Session
+
+
+def _default_ai_config(provider_name: str) -> AIConfigSnapshot:
+    # Transitional: the snapshot is built from env here so the provider stays config-driven;
+    # the DB-backed active AIConfigVersion replaces this builder, not the provider boundary.
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    return AIConfigSnapshot(
+        system_prompt=build_system_prompt(),
+        cheap_model=model,
+        expensive_model=model,
+        escalation_threshold=0.0,
+        response_format_ref="book_edition_info",
+        provider=provider_name,
+        effort="high",
+    )
 
 
 def read_file_metadata(
@@ -87,8 +104,9 @@ def analyze_file(
         provider_name = os.environ.get("AI_PROVIDER")
         if not provider_name:
             raise RuntimeError("AI_PROVIDER is not set")
-        ai_record = enrich(record, provider_name=provider_name, directory_hint=None)
-        cleaned = clean_record(ai_record)
+        config = _default_ai_config(provider_name)
+        outcome = enrich(record, provider_name=provider_name, config=config, directory_hint=None)
+        cleaned = clean_record(outcome.record)
     except Exception as exc:
         return _fail(ctx, ProcessingStep.ai_enrich, exc)
 

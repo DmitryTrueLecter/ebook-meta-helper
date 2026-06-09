@@ -5,6 +5,7 @@ from typing import List
 from dotenv import load_dotenv
 
 from app.ai.enrich import enrich
+from app.pipeline.process_file import _default_ai_config
 from app.metadata import read_metadata
 from app.models.book import BookRecord
 from app.scanner.directory_scanner import scan_directory
@@ -49,9 +50,13 @@ def process_file_debug(record: BookRecord) -> None:
     # 3. AI enrichment
     try:
         ai_provider = os.getenv("AI_PROVIDER")
-        ai_record = enrich(record, ai_provider)
-        debugger.log("ai_enrich", "AI metadata enrichment", ai_record)
-        records.append(ai_record)
+        outcome = enrich(
+            record,
+            provider_name=ai_provider,
+            config=_default_ai_config(ai_provider),
+        )
+        debugger.log("ai_enrich", "AI metadata enrichment", outcome.record)
+        records.append(outcome.record)
     except Exception as e:
         errors.append(f"ai_enrich: {e}")
         debugger.log("ai_enrich_error", str(e), record)

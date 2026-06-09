@@ -1,6 +1,6 @@
 from typing import Optional
 
-from app.ai.base import AIProvider
+from app.ai.base import AICallRecord, AIConfigSnapshot, AIProvider, EnrichOutcome
 from app.models.book import BookRecord
 
 
@@ -10,8 +10,9 @@ class DummyAIProvider(AIProvider):
     def enrich(
         self,
         record: BookRecord,
+        config: AIConfigSnapshot,
         directory_hint: Optional[dict] = None,
-    ) -> BookRecord:
+    ) -> EnrichOutcome:
         record.title = "AI Title"
         record.authors = ["AI Author"]
         record.language = "en"
@@ -19,11 +20,24 @@ class DummyAIProvider(AIProvider):
         record.source = "ai"
         record.confidence = 0.9
 
-        return record
+        call = AICallRecord(
+            system_prompt=config.system_prompt,
+            user_prompt="",
+            raw_response="",
+            model=config.cheap_model,
+            response_format_ref=config.response_format_ref,
+            duration_ms=0,
+            tier="cheap",
+            sequence=0,
+            effort=config.effort,
+            confidence=record.confidence,
+        )
+        return EnrichOutcome(record=record, calls=[call], canonical_sequence=0)
 
-    def summarize_directory(self, files: list[BookRecord]) -> dict:
-        """Deterministic fake summary derived from the longest common
-        directory prefix. Used in tests; performs no API calls."""
+    def summarize_directory(
+        self, files: list[BookRecord], config: AIConfigSnapshot
+    ) -> dict:
+        """Deterministic fake summary from the longest common directory prefix; no API calls."""
         series_name = _common_directory_basename(files)
         return {
             "series_name": series_name,
