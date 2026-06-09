@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db.base import Base
 
 if TYPE_CHECKING:
+    from db.models.ai_config_version import AIConfigVersion
     from db.models.directory import Directory
     from db.models.directory_hint import DirectoryHint
 
@@ -49,6 +50,9 @@ class EnrichmentRun(Base):
         default=EnrichmentStatus.running,
         server_default=EnrichmentStatus.running.value,
     )
+    config_version_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("ai_config_versions.id", ondelete="SET NULL"), nullable=True
+    )
     ai_model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     prompt_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     file_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -67,3 +71,4 @@ class EnrichmentRun(Base):
 
     directory: Mapped[Optional["Directory"]] = relationship("Directory")
     directory_hint: Mapped[Optional["DirectoryHint"]] = relationship("DirectoryHint")
+    config_version: Mapped[Optional["AIConfigVersion"]] = relationship("AIConfigVersion")
