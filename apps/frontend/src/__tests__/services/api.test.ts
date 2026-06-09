@@ -6,11 +6,15 @@ import {
   apiFetch,
   discoverDirectory,
   enrichFile,
+  getActiveAiConfig,
+  getAiCallDetail,
   getDirectoryDetail,
   getFileDetail,
   getFileLogs,
   getScanStatus,
+  listAiConfigVersions,
   listDirectories,
+  listFileAiCalls,
   rejectFile,
 } from '@/services/api'
 
@@ -467,6 +471,163 @@ describe('acceptFile / rejectFile', () => {
     )
 
     await expect(fn(7)).rejects.toThrow(/pipeline broken/)
+  })
+})
+
+describe('listFileAiCalls', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/files/{id}/ai-calls and returns the array', async () => {
+    const calls = [{ id: 1, file_id: 7, sequence: 1, tier: 'cheap' }]
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(calls) }),
+    )
+
+    const result = await listFileAiCalls(7)
+
+    expect(result).toEqual(calls)
+    expect(fetchMock).toHaveBeenCalledWith('/api/files/7/ai-calls', expect.any(Object))
+  })
+
+  it('throws on 204 No Content (no silent empty array)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(listFileAiCalls(7)).rejects.toThrow(/empty response/)
+  })
+
+  it('propagates backend errors', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'ai_call table missing' }),
+      }),
+    )
+
+    await expect(listFileAiCalls(7)).rejects.toThrow(/ai_call table missing/)
+  })
+})
+
+describe('getAiCallDetail', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/ai-calls/{id} and returns the payload', async () => {
+    const payload = { id: 2, file_id: 7, sequence: 2, tier: 'expensive', system_prompt: 'sp' }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(payload) }),
+    )
+
+    const result = await getAiCallDetail(2)
+
+    expect(result).toEqual(payload)
+    expect(fetchMock).toHaveBeenCalledWith('/api/ai-calls/2', expect.any(Object))
+  })
+
+  it('throws on 204 No Content', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(getAiCallDetail(2)).rejects.toThrow(/empty response/)
+  })
+})
+
+describe('getActiveAiConfig', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/ai-config/active and returns the config when one is active', async () => {
+    const payload = { id: 5, version: 3, is_active: true }
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(payload) }),
+    )
+
+    const result = await getActiveAiConfig()
+
+    expect(result).toEqual(payload)
+    expect(fetchMock).toHaveBeenCalledWith('/api/ai-config/active', expect.any(Object))
+  })
+
+  it('returns null on 404 (no active config)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 404,
+        statusText: 'Not Found',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'no active config' }),
+      }),
+    )
+
+    const result = await getActiveAiConfig()
+
+    expect(result).toBeNull()
+  })
+
+  it('throws on 500 (real error — not masked as null)', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        status: 500,
+        statusText: 'Internal Server Error',
+        ok: false,
+        json: () => Promise.resolve({ detail: 'config table broken' }),
+      }),
+    )
+
+    await expect(getActiveAiConfig()).rejects.toThrow(/config table broken/)
+  })
+})
+
+describe('listAiConfigVersions', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('GETs /api/ai-config/versions and returns the array', async () => {
+    const versions = [{ id: 5, version: 3 }, { id: 4, version: 2 }]
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ status: 200, json: () => Promise.resolve(versions) }),
+    )
+
+    const result = await listAiConfigVersions()
+
+    expect(result).toEqual(versions)
+    expect(fetchMock).toHaveBeenCalledWith('/api/ai-config/versions', expect.any(Object))
+  })
+
+  it('throws on 204 No Content', async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+    fetchMock.mockResolvedValueOnce(mockResponse({ status: 204, statusText: 'No Content' }))
+
+    await expect(listAiConfigVersions()).rejects.toThrow(/empty response/)
   })
 })
 

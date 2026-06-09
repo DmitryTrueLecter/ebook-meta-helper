@@ -2,10 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import AICallDetailPanel from '@/components/AICallDetailPanel.vue'
+import AICallList from '@/components/AICallList.vue'
+import AIConfigPanel from '@/components/AIConfigPanel.vue'
 import MetadataDiffPanel from '@/components/MetadataDiffPanel.vue'
 import ProcessingLogTimeline from '@/components/ProcessingLogTimeline.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Button } from '@/components/ui/button'
+import { useAiCallViewer } from '@/composables/useAiCallViewer'
 import { useAnalyzePolling, isAnalyzeAllowed, isAnalyzeInFlight } from '@/composables/useAnalyzePolling'
 import { buildDiffRows } from '@/composables/useMetadataDiff'
 import { acceptFile, getFileDetail, getFileLogs, rejectFile } from '@/services/api'
@@ -33,6 +37,10 @@ const logsError = ref<string | null>(null)
 const actionInFlight = ref<'accept' | 'reject' | null>(null)
 const showLogs = ref(false)
 const toast = ref<Toast | null>(null)
+
+const aiViewer = useAiCallViewer(fileId)
+const showAiCalls = ref(false)
+const showConfig = ref(false)
 
 function applyDetail(next: FileDetail): void {
   detail.value = next
@@ -131,6 +139,28 @@ async function toggleLogs(): Promise<void> {
   showLogs.value = !showLogs.value
   if (showLogs.value && logs.value.length === 0 && logsError.value === null) {
     await loadLogs()
+  }
+}
+
+async function toggleAiCalls(): Promise<void> {
+  showAiCalls.value = !showAiCalls.value
+  if (
+    showAiCalls.value &&
+    aiViewer.calls.value.length === 0 &&
+    aiViewer.callsError.value === null
+  ) {
+    await aiViewer.loadCalls()
+  }
+}
+
+async function toggleConfig(): Promise<void> {
+  showConfig.value = !showConfig.value
+  if (
+    showConfig.value &&
+    aiViewer.activeConfig.value === null &&
+    aiViewer.configError.value === null
+  ) {
+    await aiViewer.loadConfig()
   }
 }
 
@@ -286,6 +316,58 @@ const toastClasses: Record<ToastTone, string> = {
           No processing log entries yet.
         </p>
         <ProcessingLogTimeline v-else :entries="logs" />
+      </div>
+    </section>
+
+    <section v-if="detail" class="space-y-3">
+      <Button variant="ghost" @click="toggleAiCalls">
+        {{ showAiCalls ? 'Hide AI calls' : 'Show AI calls' }}
+      </Button>
+      <div v-if="showAiCalls" class="space-y-4">
+        <p v-if="aiViewer.loadingCalls.value" class="text-sm text-muted-foreground">
+          Loading AI calls…
+        </p>
+        <p v-else-if="aiViewer.callsError.value" class="text-sm text-destructive">
+          {{ aiViewer.callsError.value }}
+        </p>
+        <p v-else-if="aiViewer.calls.value.length === 0" class="text-sm text-muted-foreground">
+          No AI calls logged for this file yet.
+        </p>
+        <template v-else>
+          <AICallList
+            :calls="aiViewer.calls.value"
+            :selected-id="aiViewer.selectedCallId.value"
+            @select="aiViewer.selectCall"
+          />
+          <p class="text-xs text-muted-foreground">
+            Select a call to inspect its prompts and raw response.
+          </p>
+          <p v-if="aiViewer.loadingCallDetail.value" class="text-sm text-muted-foreground">
+            Loading call…
+          </p>
+          <p v-else-if="aiViewer.callDetailError.value" class="text-sm text-destructive">
+            {{ aiViewer.callDetailError.value }}
+          </p>
+          <AICallDetailPanel v-else-if="aiViewer.callDetail.value" :call="aiViewer.callDetail.value" />
+        </template>
+      </div>
+    </section>
+
+    <section v-if="detail" class="space-y-3">
+      <Button variant="ghost" @click="toggleConfig">
+        {{ showConfig ? 'Hide active AI config' : 'Show active AI config' }}
+      </Button>
+      <div v-if="showConfig" class="space-y-2">
+        <p v-if="aiViewer.loadingConfig.value" class="text-sm text-muted-foreground">
+          Loading config…
+        </p>
+        <p v-else-if="aiViewer.configError.value" class="text-sm text-destructive">
+          {{ aiViewer.configError.value }}
+        </p>
+        <p v-else-if="aiViewer.activeConfig.value === null" class="text-sm text-muted-foreground">
+          No active AI configuration.
+        </p>
+        <AIConfigPanel v-else :config="aiViewer.activeConfig.value" />
       </div>
     </section>
   </section>
