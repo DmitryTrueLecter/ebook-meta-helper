@@ -14,7 +14,7 @@ from app.models.book import BookRecord
 from app.pipeline.process_file import AnalyzeRequest, analyze_file
 from db.models.ai_config_version import AIConfigVersion
 from db.models.directory import Directory
-from db.models.enrichment_run import EnrichmentTrigger
+from db.models.enrichment_run import EnrichmentRun, EnrichmentTrigger
 from db.models.file_record import FileRecord
 from db.models.metadata import Metadata, MetadataSource
 from db.repos import ai_config_repo, enrichment_run_repo, file_repo, metadata_repo
@@ -74,21 +74,23 @@ def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool
         active = ai_config_repo.get_active(session)
         if active is None:
             raise RuntimeError("no active AIConfigVersion — seed migration 011 must run before analyze")
-        run_id = _resolve_run_id(session, claimed.directory_id, active.id)
+        run = _resolve_run(session, claimed.directory_id)
+        _stamp_config_version(session, run, active.id)
+        session.commit()
         enrich_result = analyze_file(
             AnalyzeRequest(
                 record=claimed.record,
                 file_id=claimed.file_id,
-                enrichment_run_id=run_id,
+                enrichment_run_id=run.id,
                 session=session,
                 config=_snapshot_from_version(active),
                 config_version_id=active.id,
             )
         )
         if enrich_result.success:
-            _finish_run(session, run_id)
+            _finish_run(session, run.id)
         else:
-            _fail_run(session, run_id)
+            _fail_run(session, run.id)
         return enrich_result.success
 
 
@@ -105,22 +107,23 @@ def _snapshot_from_version(version: AIConfigVersion) -> AIConfigSnapshot:
     )
 
 
-def _resolve_run_id(session: Session, directory_id: int, config_version_id: int) -> int:
-    """Reuse the open user_file run (or open one for crash-recovered files), stamping the active config version."""
+def _resolve_run(session: Session, directory_id: int) -> EnrichmentRun:
+    """Reuse the open user_file run, or open one for crash-recovered files. No config stamping, no commit."""
     run = enrichment_run_repo.find_latest_running(
         session, directory_id, EnrichmentTrigger.user_file
     )
     if run is not None:
-        run.config_version_id = config_version_id
-        session.flush()
-        return run.id
-    created = enrichment_run_repo.create(
+        return run
+    return enrichment_run_repo.create(
         session,
         EnrichmentRunInput(directory_id=directory_id, trigger=EnrichmentTrigger.user_file),
     )
-    created.config_version_id = config_version_id
-    session.commit()
-    return created.id
+
+
+def _stamp_config_version(session: Session, run: EnrichmentRun, config_version_id: int) -> None:
+    """Record which active config version governs this run. Caller owns the commit boundary."""
+    run.config_version_id = config_version_id
+    session.flush()
 
 
 def _finish_run(session: Session, run_id: int) -> None:
