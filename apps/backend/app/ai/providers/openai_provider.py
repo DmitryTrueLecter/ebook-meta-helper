@@ -36,6 +36,16 @@ class _OpenAICall:
 
 
 @dataclass(frozen=True)
+class _ProviderRequest:
+    """Call-specific inputs for one OpenAI responses.create: prompts, schema, target model."""
+
+    system_prompt: str
+    user_prompt: str
+    response_format: dict
+    model: str
+
+
+@dataclass(frozen=True)
 class _TierStep:
     """Identifies one step of the escalation chain: which model to call and how to label its capture."""
 
@@ -145,53 +155,48 @@ class OpenAIProvider(AIProvider):
         model: str,
         directory_hint: Optional[dict] = None,
     ) -> _OpenAICall:
-        return self._create_response(
+        request = _ProviderRequest(
             system_prompt=config.system_prompt,
             user_prompt=build_book_metadata_prompt(record, directory_hint),
             response_format=get_response_format(),
-            config=config,
             model=model,
         )
+        return self._create_response(request, config)
 
     def _call_openai_for_directory_summary(
         self, files: list[BookRecord], config: AIConfigSnapshot
     ) -> _OpenAICall:
-        return self._create_response(
+        request = _ProviderRequest(
             system_prompt=build_directory_summary_system_prompt(),
             user_prompt=build_directory_summary_user_prompt(files),
             response_format=get_directory_summary_response_format(),
-            config=config,
             model=config.cheap_model,
         )
+        return self._create_response(request, config)
 
     def _create_response(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        response_format: dict,
-        config: AIConfigSnapshot,
-        model: str,
+        self, request: _ProviderRequest, config: AIConfigSnapshot
     ) -> _OpenAICall:
         client = self._get_client()
-        request: Dict[str, Any] = {
-            "model": model,
-            "instructions": system_prompt,
-            "input": user_prompt,
-            "text": {"format": response_format},
+        payload: Dict[str, Any] = {
+            "model": request.model,
+            "instructions": request.system_prompt,
+            "input": request.user_prompt,
+            "text": {"format": request.response_format},
         }
         if config.effort is not None:
-            request["reasoning"] = {"effort": config.effort}
+            payload["reasoning"] = {"effort": config.effort}
 
         started = time.monotonic()
-        response = client.responses.create(**request)
+        response = client.responses.create(**payload)
         duration_ms = int((time.monotonic() - started) * 1000)
 
         content = response.output_text
         prompt_tokens, completion_tokens = _extract_token_usage(response)
         return _OpenAICall(
             parsed=json.loads(content),
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            system_prompt=request.system_prompt,
+            user_prompt=request.user_prompt,
             raw_response=content,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
