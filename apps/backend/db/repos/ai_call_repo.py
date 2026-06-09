@@ -64,6 +64,10 @@ def record_calls(
     return records
 
 
+def get_by_id(session: Session, call_id: int) -> Optional[AICall]:
+    return session.get(AICall, call_id)
+
+
 def get_for_file(session: Session, file_id: int) -> list[AICall]:
     return list(
         session.execute(

@@ -1,6 +1,374 @@
 {
   "components": {
     "schemas": {
+      "AICallDetail": {
+        "description": "Full AI call \u2014 summary fields plus the prompts, raw response, and provenance.",
+        "properties": {
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "config_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Version Id"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "enrichment_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrichment Run Id"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_canonical": {
+            "title": "Is Canonical",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "parse_errors": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Errors"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "raw_response": {
+            "title": "Raw Response",
+            "type": "string"
+          },
+          "response_format_ref": {
+            "title": "Response Format Ref",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "system_prompt": {
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "user_prompt": {
+            "title": "User Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "file_id",
+          "enrichment_run_id",
+          "sequence",
+          "tier",
+          "is_canonical",
+          "model",
+          "confidence",
+          "prompt_tokens",
+          "completion_tokens",
+          "cost_usd",
+          "duration_ms",
+          "created_at",
+          "system_prompt",
+          "user_prompt",
+          "raw_response",
+          "response_format_ref",
+          "effort",
+          "parse_errors",
+          "origin",
+          "config_version_id"
+        ],
+        "title": "AICallDetail",
+        "type": "object"
+      },
+      "AICallSummary": {
+        "description": "One AI call as a list row \u2014 identity, tier, and cost metrics; no prompt/response text.",
+        "properties": {
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "enrichment_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrichment Run Id"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_canonical": {
+            "title": "Is Canonical",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "file_id",
+          "enrichment_run_id",
+          "sequence",
+          "tier",
+          "is_canonical",
+          "model",
+          "confidence",
+          "prompt_tokens",
+          "completion_tokens",
+          "cost_usd",
+          "duration_ms",
+          "created_at"
+        ],
+        "title": "AICallSummary",
+        "type": "object"
+      },
+      "AIConfigVersionView": {
+        "description": "One versioned AI runtime configuration row.",
+        "properties": {
+          "cheap_model": {
+            "title": "Cheap Model",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "effort": {
+            "title": "Effort",
+            "type": "string"
+          },
+          "escalation_threshold": {
+            "title": "Escalation Threshold",
+            "type": "number"
+          },
+          "expensive_model": {
+            "title": "Expensive Model",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "response_format_ref": {
+            "title": "Response Format Ref",
+            "type": "string"
+          },
+          "system_prompt": {
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "label",
+          "system_prompt",
+          "cheap_model",
+          "expensive_model",
+          "effort",
+          "escalation_threshold",
+          "provider",
+          "response_format_ref",
+          "is_active",
+          "created_at",
+          "created_by"
+        ],
+        "title": "AIConfigVersionView",
+        "type": "object"
+      },
       "DirectoryDetail": {
         "description": "Single directory with the contained file list.",
         "properties": {
@@ -650,6 +1018,97 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/ai-calls/{call_id}": {
+      "get": {
+        "description": "Full AI call including prompts, raw response, and provenance.",
+        "operationId": "get_ai_call_detail_api_ai_calls__call_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "title": "Call Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AICallDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ai Call Detail",
+        "tags": [
+          "ai-calls"
+        ]
+      }
+    },
+    "/api/ai-config/active": {
+      "get": {
+        "description": "The currently active AI config version; 404 when none is active.",
+        "operationId": "get_active_ai_config_api_ai_config_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIConfigVersionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Active Ai Config",
+        "tags": [
+          "ai-config"
+        ]
+      }
+    },
+    "/api/ai-config/versions": {
+      "get": {
+        "description": "All AI config versions \u2014 highest version number first.",
+        "operationId": "list_ai_config_versions_api_ai_config_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AIConfigVersionView"
+                  },
+                  "title": "Response List Ai Config Versions Api Ai Config Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Ai Config Versions",
+        "tags": [
+          "ai-config"
+        ]
+      }
+    },
     "/api/directories": {
       "get": {
         "description": "Directory tree with per-directory counts; archived (`missing`) directories hidden unless `include_missing`.",
@@ -972,6 +1431,53 @@
         "summary": "Accept File Endpoint",
         "tags": [
           "files"
+        ]
+      }
+    },
+    "/api/files/{file_id}/ai-calls": {
+      "get": {
+        "description": "Every AI call logged for the file \u2014 newest first; list view without prompt/response text.",
+        "operationId": "list_file_ai_calls_api_files__file_id__ai_calls_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AICallSummary"
+                  },
+                  "title": "Response List File Ai Calls Api Files  File Id  Ai Calls Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List File Ai Calls",
+        "tags": [
+          "ai-calls"
         ]
       }
     },

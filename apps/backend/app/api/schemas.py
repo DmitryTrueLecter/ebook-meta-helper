@@ -125,6 +125,55 @@ class ProcessingLogEntry(BaseModel):
     created_at: datetime
 
 
+class AICallSummary(BaseModel):
+    """One AI call as a list row — identity, tier, and cost metrics; no prompt/response text."""
+
+    id: int
+    file_id: int
+    enrichment_run_id: int | None
+    sequence: int
+    tier: str
+    is_canonical: bool
+    model: str
+    confidence: float | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    cost_usd: float | None
+    duration_ms: int
+    created_at: datetime
+
+
+class AICallDetail(AICallSummary):
+    """Full AI call — summary fields plus the prompts, raw response, and provenance."""
+
+    system_prompt: str
+    user_prompt: str
+    raw_response: str
+    response_format_ref: str
+    effort: str | None
+    parse_errors: Any | None
+    origin: str
+    config_version_id: int | None
+
+
+class AIConfigVersionView(BaseModel):
+    """One versioned AI runtime configuration row."""
+
+    id: int
+    version: int
+    label: str | None
+    system_prompt: str
+    cheap_model: str
+    expensive_model: str
+    effort: str
+    escalation_threshold: float
+    provider: str
+    response_format_ref: str
+    is_active: bool
+    created_at: datetime
+    created_by: str | None
+
+
 class ScanJobProgress(BaseModel):
     """Progress snapshot of a scan job."""
 
