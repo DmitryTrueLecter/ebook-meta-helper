@@ -41,7 +41,7 @@ def test_call_openai_nests_format_under_text_format(monkeypatch):
     client = _mock_client('{"edition": {}, "original": {}, "confidence": 0.0}')
     monkeypatch.setattr(provider, "_get_client", lambda: client)
 
-    provider._call_openai(_record(), _config())
+    provider._call_openai(_record(), _config(), "cheap-model")
 
     kwargs = client.responses.create.call_args.kwargs
     text = kwargs["text"]
@@ -82,7 +82,7 @@ def test_effort_comes_from_config(monkeypatch):
     client = _mock_client('{"confidence": 0.0}')
     monkeypatch.setattr(provider, "_get_client", lambda: client)
 
-    provider._call_openai(_record(), _config(effort="low"))
+    provider._call_openai(_record(), _config(effort="low"), "cheap-model")
 
     assert client.responses.create.call_args.kwargs["reasoning"] == {"effort": "low"}
 
@@ -92,7 +92,7 @@ def test_reasoning_omitted_when_effort_is_none(monkeypatch):
     client = _mock_client('{"confidence": 0.0}')
     monkeypatch.setattr(provider, "_get_client", lambda: client)
 
-    provider._call_openai(_record(), _config(effort=None))
+    provider._call_openai(_record(), _config(effort=None), "cheap-model")
 
     assert "reasoning" not in client.responses.create.call_args.kwargs
 
@@ -103,7 +103,7 @@ def test_call_captures_token_usage_and_raw_response(monkeypatch):
     client = _mock_client('{"confidence": 0.0}', usage=usage)
     monkeypatch.setattr(provider, "_get_client", lambda: client)
 
-    call = provider._call_openai(_record(), _config())
+    call = provider._call_openai(_record(), _config(), "cheap-model")
 
     assert call.prompt_tokens == 11
     assert call.completion_tokens == 22
@@ -116,7 +116,7 @@ def test_call_tokens_none_when_usage_absent(monkeypatch):
     client = _mock_client('{"confidence": 0.0}', usage=None)
     monkeypatch.setattr(provider, "_get_client", lambda: client)
 
-    call = provider._call_openai(_record(), _config())
+    call = provider._call_openai(_record(), _config(), "cheap-model")
 
     assert call.prompt_tokens is None
     assert call.completion_tokens is None
@@ -137,7 +137,7 @@ def _fake_call(parsed: dict) -> _OpenAICall:
 def test_openai_provider_v2_applies_edition_and_original(monkeypatch):
     provider = OpenAIProvider()
 
-    def fake_call(_record, _config, _directory_hint=None):
+    def fake_call(_record, _config, _model, _directory_hint=None):
         return _fake_call(
             {
                 "edition": {
@@ -195,7 +195,9 @@ def test_enrich_call_record_reflects_actual_call_values(monkeypatch):
     monkeypatch.setattr(
         provider,
         "_call_openai",
-        lambda _record, _config, _directory_hint=None: _fake_call({"confidence": 0.5}),
+        lambda _record, _config, _model, _directory_hint=None: _fake_call(
+            {"confidence": 0.5}
+        ),
     )
 
     outcome = provider.enrich(_record(), _config(effort="low"))
@@ -213,7 +215,7 @@ def test_enrich_call_record_reflects_actual_call_values(monkeypatch):
 def test_enrich_records_transport_failure_without_propagating(monkeypatch):
     provider = OpenAIProvider()
 
-    def boom(_record, _config, _directory_hint=None):
+    def boom(_record, _config, _model, _directory_hint=None):
         raise ConnectionError("upstream 500")
 
     monkeypatch.setattr(provider, "_call_openai", boom)
@@ -226,3 +228,96 @@ def test_enrich_records_transport_failure_without_propagating(monkeypatch):
     assert call.model == "cheap-model"
     assert call.duration_ms == 0
     assert call.prompt_tokens is None
+
+
+def _scripted_call(by_model: dict[str, dict]):
+    """Patch _call_openai to return a fake call whose parse depends on the model used."""
+
+    def _call(_record, _config, model, _directory_hint=None):
+        return _fake_call(by_model[model])
+
+    return _call
+
+
+def _same_model_config() -> AIConfigSnapshot:
+    return AIConfigSnapshot(
+        system_prompt="sys",
+        cheap_model="same-model",
+        expensive_model="same-model",
+        escalation_threshold=0.7,
+        response_format_ref="book_edition_info",
+        provider="openai",
+        effort="high",
+    )
+
+
+def test_no_escalation_when_models_equal_even_below_threshold(monkeypatch):
+    provider = OpenAIProvider()
+    monkeypatch.setattr(
+        provider,
+        "_call_openai",
+        _scripted_call({"same-model": {"confidence": 0.1}}),
+    )
+
+    outcome = provider.enrich(_record(), _same_model_config())
+
+    assert len(outcome.calls) == 1
+    assert outcome.calls[0].tier == "cheap"
+    assert outcome.canonical_sequence == 0
+
+
+def test_escalation_makes_second_call_and_picks_higher_confidence(monkeypatch):
+    provider = OpenAIProvider()
+    monkeypatch.setattr(
+        provider,
+        "_call_openai",
+        _scripted_call(
+            {
+                "cheap-model": {"confidence": 0.2},
+                "expensive-model": {"confidence": 0.9},
+            }
+        ),
+    )
+
+    outcome = provider.enrich(_record(), _config())
+
+    assert [call.tier for call in outcome.calls] == ["cheap", "expensive"]
+    assert [call.sequence for call in outcome.calls] == [0, 1]
+    assert outcome.calls[0].confidence == 0.2
+    assert outcome.calls[1].confidence == 0.9
+    assert outcome.canonical_sequence == 1
+    assert outcome.record.confidence == 0.9
+
+
+def test_no_escalation_when_cheap_confidence_meets_threshold(monkeypatch):
+    provider = OpenAIProvider()
+    monkeypatch.setattr(
+        provider,
+        "_call_openai",
+        _scripted_call({"cheap-model": {"confidence": 0.7}}),
+    )
+
+    outcome = provider.enrich(_record(), _config())
+
+    assert len(outcome.calls) == 1
+    assert outcome.canonical_sequence == 0
+
+
+def test_escalation_keeps_cheap_call_when_cheap_stays_better(monkeypatch):
+    provider = OpenAIProvider()
+    monkeypatch.setattr(
+        provider,
+        "_call_openai",
+        _scripted_call(
+            {
+                "cheap-model": {"confidence": 0.6},
+                "expensive-model": {"confidence": 0.3},
+            }
+        ),
+    )
+
+    outcome = provider.enrich(_record(), _config())
+
+    assert len(outcome.calls) == 2
+    assert outcome.canonical_sequence == 0
+    assert outcome.record.confidence == 0.6
