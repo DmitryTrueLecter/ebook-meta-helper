@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.ai.outcome import AICallRecord, EnrichOutcome
+from app.ai.base import AICallRecord, EnrichOutcome
 from app.models.book import BookRecord
 from db.models.ai_call import AICallOrigin
 from db.models.directory import Directory

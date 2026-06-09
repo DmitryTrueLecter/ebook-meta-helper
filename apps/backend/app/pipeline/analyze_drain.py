@@ -9,13 +9,15 @@ from typing import Any, Callable, Optional
 
 from sqlalchemy.orm import Session
 
+from app.ai.base import AIConfigSnapshot
 from app.models.book import BookRecord
-from app.pipeline.process_file import analyze_file
+from app.pipeline.process_file import AnalyzeRequest, analyze_file
+from db.models.ai_config_version import AIConfigVersion
 from db.models.directory import Directory
 from db.models.enrichment_run import EnrichmentTrigger
 from db.models.file_record import FileRecord
 from db.models.metadata import Metadata, MetadataSource
-from db.repos import enrichment_run_repo, file_repo, metadata_repo
+from db.repos import ai_config_repo, enrichment_run_repo, file_repo, metadata_repo
 from db.repos.enrichment_run_repo import EnrichmentRunInput, EnrichmentRunResult
 from db.session import get_session
 
@@ -67,14 +69,21 @@ def _claim_one(session_factory: SessionFactory) -> Optional[_ClaimedFile]:
 
 
 def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool:
-    """Resolve the open user_file run, run the AI-only enrich, then close the run."""
+    """Resolve the open user_file run with active config, run the AI-only enrich, then close the run."""
     with session_factory() as session:
-        run_id = _resolve_run_id(session, claimed.directory_id)
+        active = ai_config_repo.get_active(session)
+        if active is None:
+            raise RuntimeError("no active AIConfigVersion — seed migration 011 must run before analyze")
+        run_id = _resolve_run_id(session, claimed.directory_id, active.id)
         enrich_result = analyze_file(
-            record=claimed.record,
-            file_id=claimed.file_id,
-            enrichment_run_id=run_id,
-            session=session,
+            AnalyzeRequest(
+                record=claimed.record,
+                file_id=claimed.file_id,
+                enrichment_run_id=run_id,
+                session=session,
+                config=_snapshot_from_version(active),
+                config_version_id=active.id,
+            )
         )
         if enrich_result.success:
             _finish_run(session, run_id)
@@ -83,17 +92,33 @@ def _run_analyze(claimed: _ClaimedFile, session_factory: SessionFactory) -> bool
         return enrich_result.success
 
 
-def _resolve_run_id(session: Session, directory_id: int) -> int:
-    """The enrich endpoint opens a user_file run; reuse it, else open one (crash-recovered files)."""
+def _snapshot_from_version(version: AIConfigVersion) -> AIConfigSnapshot:
+    """Project the active config version into the runtime snapshot the provider reads."""
+    return AIConfigSnapshot(
+        system_prompt=version.system_prompt,
+        cheap_model=version.cheap_model,
+        expensive_model=version.expensive_model,
+        escalation_threshold=float(version.escalation_threshold),
+        response_format_ref=version.response_format_ref,
+        provider=version.provider,
+        effort=version.effort,
+    )
+
+
+def _resolve_run_id(session: Session, directory_id: int, config_version_id: int) -> int:
+    """Reuse the open user_file run (or open one for crash-recovered files), stamping the active config version."""
     run = enrichment_run_repo.find_latest_running(
         session, directory_id, EnrichmentTrigger.user_file
     )
     if run is not None:
+        run.config_version_id = config_version_id
+        session.flush()
         return run.id
     created = enrichment_run_repo.create(
         session,
         EnrichmentRunInput(directory_id=directory_id, trigger=EnrichmentTrigger.user_file),
     )
+    created.config_version_id = config_version_id
     session.commit()
     return created.id
 

@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Optional
 from unittest.mock import patch
 
-from app.ai.base import AIConfigSnapshot, EnrichOutcome
+from app.ai.base import AICallRecord, AIConfigSnapshot, EnrichOutcome
 from app.models.book import BookRecord
-from app.pipeline.process_file import analyze_file
+from app.pipeline.process_file import AnalyzeRequest, analyze_file
+from db.models.ai_call import AICall
 from db.models.directory import Directory
 from db.models.enrichment_run import EnrichmentRun, EnrichmentTrigger
 from db.models.file_record import FileRecord, FileStatus
@@ -31,6 +32,43 @@ def _make_record(path: str = "/lib/book.fb2", title: str = "From File") -> BookR
     )
 
 
+def _config() -> AIConfigSnapshot:
+    return AIConfigSnapshot(
+        system_prompt="sys",
+        cheap_model="gpt-4o-mini",
+        expensive_model="gpt-4o",
+        escalation_threshold=0.7,
+        response_format_ref="book_metadata.v2",
+        provider="dummy",
+        effort="high",
+    )
+
+
+def _request(file_id: int, run_id: int, session, config_version_id=7) -> AnalyzeRequest:
+    return AnalyzeRequest(
+        record=_make_record(),
+        file_id=file_id,
+        enrichment_run_id=run_id,
+        session=session,
+        config=_config(),
+        config_version_id=config_version_id,
+    )
+
+
+def _call(sequence: int, tier: str, confidence: float) -> AICallRecord:
+    return AICallRecord(
+        system_prompt="sys",
+        user_prompt="user",
+        raw_response="{}",
+        model="gpt-4o-mini",
+        response_format_ref="book_metadata.v2",
+        duration_ms=10,
+        tier=tier,
+        sequence=sequence,
+        confidence=confidence,
+    )
+
+
 def _seed_directory_file_run(session) -> tuple[int, int]:
     """Seed a file already at `reading` — the claim step has run before analyze_file."""
     directory = Directory(path="/lib", name="lib", depth=0)
@@ -51,7 +89,11 @@ def _seed_directory_file_run(session) -> tuple[int, int]:
 
 
 def _outcome(record: BookRecord) -> EnrichOutcome:
-    return EnrichOutcome(record=record, calls=[], canonical_sequence=0)
+    return EnrichOutcome(
+        record=record,
+        calls=[_call(0, "cheap", 0.9)],
+        canonical_sequence=0,
+    )
 
 
 def _enrich_returns(extra_title: str = "AI Title"):
@@ -78,10 +120,7 @@ class TestHappyPath:
 
         with patch("app.pipeline.process_file.enrich", side_effect=_enrich_returns()):
             result = analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         assert result.success is True
@@ -97,10 +136,7 @@ class TestHappyPath:
 
         with patch("app.pipeline.process_file.enrich", side_effect=_enrich_returns("AI Title")):
             analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         rows = (
@@ -120,10 +156,7 @@ class TestHappyPath:
 
         with patch("app.pipeline.process_file.enrich", side_effect=_enrich_returns()):
             analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         logs = (
@@ -152,15 +185,70 @@ class TestHappyPath:
 
         with patch("app.pipeline.process_file.enrich", side_effect=_spy_enrich):
             analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         assert captured["directory_hint"] is None
         assert captured["provider_name"] == "dummy"
         assert isinstance(captured["config"], AIConfigSnapshot)
+
+
+class TestPersistsCallChain:
+    def _escalating_enrich(self):
+        """Two-call chain (cheap low, expensive high); canonical is the highest-confidence call."""
+
+        def _impl(record, provider_name, config, directory_hint=None):
+            record.title = "AI Title"
+            record.source = "ai"
+            record.confidence = 0.95
+            return EnrichOutcome(
+                record=record,
+                calls=[_call(0, "cheap", 0.40), _call(1, "expensive", 0.95)],
+                canonical_sequence=1,
+            )
+
+        return _impl
+
+    def test_chain_persisted_with_single_canonical_and_provenance(self, session, monkeypatch):
+        file_id, run_id = _seed_directory_file_run(session)
+        monkeypatch.setenv("AI_PROVIDER", "dummy")
+
+        with patch("app.pipeline.process_file.enrich", side_effect=self._escalating_enrich()):
+            analyze_file(_request(file_id, run_id, session, config_version_id=7))
+
+        calls = (
+            session.query(AICall)
+            .filter(AICall.file_id == file_id)
+            .order_by(AICall.sequence)
+            .all()
+        )
+        assert [c.sequence for c in calls] == [0, 1]
+        canonical = [c for c in calls if c.is_canonical]
+        assert len(canonical) == 1
+        assert canonical[0].sequence == 1
+        assert all(c.config_version_id == 7 for c in calls)
+        assert all(c.enrichment_run_id == run_id for c in calls)
+        assert all(c.origin.value == "pipeline" for c in calls)
+
+    def test_canonical_snapshot_matches_highest_confidence_call(self, session, monkeypatch):
+        file_id, run_id = _seed_directory_file_run(session)
+        monkeypatch.setenv("AI_PROVIDER", "dummy")
+
+        with patch("app.pipeline.process_file.enrich", side_effect=self._escalating_enrich()):
+            analyze_file(_request(file_id, run_id, session))
+
+        snapshot = (
+            session.query(Metadata)
+            .filter(Metadata.file_id == file_id, Metadata.source == MetadataSource.ai)
+            .one()
+        )
+        assert snapshot.title == "AI Title"
+        canonical = (
+            session.query(AICall)
+            .filter(AICall.file_id == file_id, AICall.is_canonical.is_(True))
+            .one()
+        )
+        assert float(canonical.confidence) == 0.95
 
 
 class TestEnrichStepFailure:
@@ -173,10 +261,7 @@ class TestEnrichStepFailure:
             side_effect=ConnectionError("provider timeout"),
         ):
             result = analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         assert result.success is False
@@ -186,12 +271,13 @@ class TestEnrichStepFailure:
         assert file_record.status == FileStatus.failed
         assert file_record.error_message == "ai_enrich: provider timeout"
 
-        # No AI snapshot persisted on a failed enrich.
+        # No AI snapshot nor call chain persisted on a failed enrich.
         sources = [
             row.source
             for row in session.query(Metadata).filter(Metadata.file_id == file_id)
         ]
         assert sources == []
+        assert session.query(AICall).filter(AICall.file_id == file_id).count() == 0
 
     def test_enrich_failure_writes_single_error_log(self, session, monkeypatch):
         file_id, run_id = _seed_directory_file_run(session)
@@ -202,10 +288,7 @@ class TestEnrichStepFailure:
             side_effect=ConnectionError("provider timeout"),
         ):
             analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         logs = (
@@ -224,10 +307,7 @@ class TestEnrichStepFailure:
 
         with patch("app.pipeline.process_file.enrich") as enrich_mock:
             result = analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         assert result.success is False
@@ -252,10 +332,7 @@ class TestStatusInvariants:
 
         with patch("app.pipeline.process_file.enrich", side_effect=_watch_enrich):
             analyze_file(
-                record=_make_record(),
-                file_id=file_id,
-                enrichment_run_id=run_id,
-                session=session,
+                _request(file_id, run_id, session),
             )
 
         # The AI call runs only after the row moved to `enriching`.
