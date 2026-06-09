@@ -300,7 +300,9 @@ class TestTriggerDirectoryDiscover:
         response = test_client.post("/api/directories/999/discover")
         assert response.status_code == 404
 
-    def test_retired_scan_route_returns_404(self, client):
-        test_client, _ = client
-        response = test_client.post("/api/directories/1/scan")
-        assert response.status_code == 404
+    def test_scan_route_fully_retired(self):
+        # Assert route absence, not HTTP status: the SPA catch-all in app.api.main makes an unknown POST path return 404 or 405 depending on whether apps/frontend/dist exists, which is not an API invariant.
+        registered = {(path, method) for route in routes.router.routes
+                      for path in [route.path] for method in (route.methods or set())}
+        assert ("/api/directories/{directory_id}/scan", "POST") not in registered
+        assert all("scan" not in path for path, _ in registered)
