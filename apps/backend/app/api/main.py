@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.routes import ai_calls as ai_calls_routes
+from app.api.routes import ai_config as ai_config_routes
 from app.api.routes import directories as directories_routes
 from app.api.routes import files as files_routes
 from app.api.routes import scan as scan_routes
@@ -52,6 +54,8 @@ async def log_requests(request: Request, call_next):
 app.include_router(directories_routes.router)
 app.include_router(files_routes.router)
 app.include_router(scan_routes.router)
+app.include_router(ai_calls_routes.router)
+app.include_router(ai_config_routes.router)
 
 
 @app.get("/api/health")

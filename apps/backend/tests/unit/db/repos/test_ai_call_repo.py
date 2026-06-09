@@ -201,6 +201,33 @@ class TestGetForFile:
         assert len(ai_call_repo.get_for_file(session, f.id)) == 2
 
 
+class TestGetById:
+    def test_returns_the_matching_call(self, session):
+        f = _new_file(session)
+        records = ai_call_repo.record_calls(
+            session,
+            AICallInput(
+                file_id=f.id,
+                enrichment_run_id=None,
+                config_version_id=None,
+                origin=AICallOrigin.pipeline,
+            ),
+            EnrichOutcome(
+                record=_book(),
+                calls=[_call(0, "cheap", "0.5")],
+                canonical_sequence=0,
+            ),
+        )
+        session.commit()
+
+        fetched = ai_call_repo.get_by_id(session, records[0].id)
+        assert fetched is not None
+        assert fetched.id == records[0].id
+
+    def test_returns_none_for_unknown_id(self, session):
+        assert ai_call_repo.get_by_id(session, 9999) is None
+
+
 class TestGetForRun:
     def test_returns_all_calls_for_run(self, session):
         f = _new_file(session)
