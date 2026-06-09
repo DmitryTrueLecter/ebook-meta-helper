@@ -4,6 +4,66 @@
  */
 
 export interface paths {
+    "/api/ai-calls/{call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ai Call Detail
+         * @description Full AI call including prompts, raw response, and provenance.
+         */
+        get: operations["get_ai_call_detail_api_ai_calls__call_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai-config/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Ai Config
+         * @description The currently active AI config version; 404 when none is active.
+         */
+        get: operations["get_active_ai_config_api_ai_config_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai-config/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ai Config Versions
+         * @description All AI config versions — highest version number first.
+         */
+        get: operations["list_ai_config_versions_api_ai_config_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/directories": {
         parameters: {
             query?: never;
@@ -118,6 +178,26 @@ export interface paths {
          * @description Apply the current AI suggestion — write metadata back, rename, move, snapshot, mark accepted.
          */
         post: operations["accept_file_endpoint_api_files__file_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/{file_id}/ai-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List File Ai Calls
+         * @description Every AI call logged for the file — newest first; list view without prompt/response text.
+         */
+        get: operations["list_file_ai_calls_api_files__file_id__ai_calls_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -247,6 +327,127 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AICallDetail
+         * @description Full AI call — summary fields plus the prompts, raw response, and provenance.
+         */
+        AICallDetail: {
+            /** Completion Tokens */
+            completion_tokens: number | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Config Version Id */
+            config_version_id: number | null;
+            /** Cost Usd */
+            cost_usd: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Effort */
+            effort: string | null;
+            /** Enrichment Run Id */
+            enrichment_run_id: number | null;
+            /** File Id */
+            file_id: number;
+            /** Id */
+            id: number;
+            /** Is Canonical */
+            is_canonical: boolean;
+            /** Model */
+            model: string;
+            /** Origin */
+            origin: string;
+            /** Parse Errors */
+            parse_errors: unknown | null;
+            /** Prompt Tokens */
+            prompt_tokens: number | null;
+            /** Raw Response */
+            raw_response: string;
+            /** Response Format Ref */
+            response_format_ref: string;
+            /** Sequence */
+            sequence: number;
+            /** System Prompt */
+            system_prompt: string;
+            /** Tier */
+            tier: string;
+            /** User Prompt */
+            user_prompt: string;
+        };
+        /**
+         * AICallSummary
+         * @description One AI call as a list row — identity, tier, and cost metrics; no prompt/response text.
+         */
+        AICallSummary: {
+            /** Completion Tokens */
+            completion_tokens: number | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Cost Usd */
+            cost_usd: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Enrichment Run Id */
+            enrichment_run_id: number | null;
+            /** File Id */
+            file_id: number;
+            /** Id */
+            id: number;
+            /** Is Canonical */
+            is_canonical: boolean;
+            /** Model */
+            model: string;
+            /** Prompt Tokens */
+            prompt_tokens: number | null;
+            /** Sequence */
+            sequence: number;
+            /** Tier */
+            tier: string;
+        };
+        /**
+         * AIConfigVersionView
+         * @description One versioned AI runtime configuration row.
+         */
+        AIConfigVersionView: {
+            /** Cheap Model */
+            cheap_model: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Effort */
+            effort: string;
+            /** Escalation Threshold */
+            escalation_threshold: number;
+            /** Expensive Model */
+            expensive_model: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Label */
+            label: string | null;
+            /** Provider */
+            provider: string;
+            /** Response Format Ref */
+            response_format_ref: string;
+            /** System Prompt */
+            system_prompt: string;
+            /** Version */
+            version: number;
+        };
         /**
          * DirectoryDetail
          * @description Single directory with the contained file list.
@@ -478,6 +679,77 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_ai_call_detail_api_ai_calls__call_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                call_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AICallDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_ai_config_api_ai_config_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIConfigVersionView"];
+                };
+            };
+        };
+    };
+    list_ai_config_versions_api_ai_config_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIConfigVersionView"][];
+                };
+            };
+        };
+    };
     list_directory_tree_api_directories_get: {
         parameters: {
             query?: {
@@ -656,6 +928,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileListItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_file_ai_calls_api_files__file_id__ai_calls_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AICallSummary"][];
                 };
             };
             /** @description Validation Error */

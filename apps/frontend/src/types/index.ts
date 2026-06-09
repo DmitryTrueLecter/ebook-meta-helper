@@ -79,3 +79,20 @@ export type EnrichmentTriggerResponse = Schemas['EnrichmentTriggerResponse']
 export type ProcessingLogEntry = Schemas['ProcessingLogEntry']
 
 export type PaginatedFiles = Schemas['PaginatedFiles']
+
+// Escalation tier of an AI call. Backend sources `tier` as an open `str`; the
+// two-tier cheap→expensive escalation is the only shape the model emits.
+export type AICallTier = 'cheap' | 'expensive'
+
+// tier is an open str in the base; narrow to the escalation union the UI branches on.
+export type AICallSummary = Omit<Schemas['AICallSummary'], 'tier'> & {
+  tier: AICallTier
+}
+
+// tier narrowed as above; parse_errors typed off `any` to the JSON shape the backend stores.
+export type AICallDetail = Omit<Schemas['AICallDetail'], 'tier' | 'parse_errors'> & {
+  tier: AICallTier
+  parse_errors: JsonValue | null
+}
+
+export type AIConfigVersionView = Schemas['AIConfigVersionView']

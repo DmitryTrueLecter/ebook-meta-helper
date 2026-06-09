@@ -1,4 +1,7 @@
 import type {
+  AICallDetail,
+  AICallSummary,
+  AIConfigVersionView,
   DirectoryDetail,
   DirectoryNode,
   EnrichmentTriggerResponse,
@@ -137,6 +140,45 @@ export async function rejectFile(id: number): Promise<FileListItem> {
     throw new Error(`Reject on file ${id} returned an empty response`)
   }
   return result
+}
+
+// GET /api/files/{id}/ai-calls — every AI call logged for the file, newest first; no prompt text.
+export async function listFileAiCalls(id: number): Promise<AICallSummary[]> {
+  const calls = await apiFetch<AICallSummary[]>(`/files/${id}/ai-calls`)
+  if (calls === null) {
+    throw new Error(`File ${id} AI calls returned an empty response`)
+  }
+  return calls
+}
+
+// GET /api/ai-calls/{id} — full AI call incl. prompts, raw response, parse errors.
+export async function getAiCallDetail(id: number): Promise<AICallDetail> {
+  const detail = await apiFetch<AICallDetail>(`/ai-calls/${id}`)
+  if (detail === null) {
+    throw new Error(`AI call ${id} detail returned an empty response`)
+  }
+  return detail
+}
+
+// GET /api/ai-config/active — active config version; null when none is active (404 from the backend).
+export async function getActiveAiConfig(): Promise<AIConfigVersionView | null> {
+  try {
+    return await apiFetch<AIConfigVersionView>('/ai-config/active')
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return null
+    }
+    throw err
+  }
+}
+
+// GET /api/ai-config/versions — all config versions, highest version number first.
+export async function listAiConfigVersions(): Promise<AIConfigVersionView[]> {
+  const versions = await apiFetch<AIConfigVersionView[]>('/ai-config/versions')
+  if (versions === null) {
+    throw new Error('AI config versions returned an empty response')
+  }
+  return versions
 }
 
 // POST /api/files/{id}/enrich — queue re-enrichment; returns the EnrichmentTriggerResponse (202).
